@@ -46,7 +46,7 @@ def _make_handler(captured: _Captured):
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length)
 
-            if self.path == "/ingest/heat":
+            if self.path == "/api/live-results/ingest/":
                 try:
                     payload = json.loads(body.decode("utf-8"))
                 except Exception:

@@ -22,7 +22,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--url", help="Base URL of the ingest server, e.g. http://localhost:8080")
     ap.add_argument("--token", default="", help="Optional bearer token; omitted if blank.")
     ap.add_argument("--include-csv", action="store_true", help="Also watch .csv files.")
-    ap.add_argument("--no-raw", action="store_true", help="Don't upload raw files (JSON only).")
+    ap.add_argument("--upload-raw", action="store_true",
+                    help="Also upload raw files to {url}/ingest/file (off by default; "
+                         "makosmeets has no file endpoint).")
     ap.add_argument("--replay-existing", action="store_true",
                     help="Also send files that already exist when the watcher starts.")
     ap.add_argument("--tier", default="unofficial", choices=["unofficial", "official"],
@@ -43,7 +45,7 @@ def run_headless(args: argparse.Namespace) -> int:
         base_url=args.url,
         token=args.token,
         include_csv=bool(args.include_csv),
-        upload_raw=not bool(args.no_raw),
+        upload_raw=bool(args.upload_raw),
         replay_existing=bool(args.replay_existing),
         tier=args.tier,
     )

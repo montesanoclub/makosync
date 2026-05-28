@@ -56,7 +56,7 @@ class WatcherConfig:
     token: str = ""
     include_csv: bool = False
     replay_existing: bool = False
-    upload_raw: bool = True
+    upload_raw: bool = False  # makosmeets has no /ingest/file endpoint; JSON only
     poll_interval: float = POLL_INTERVAL
     tier: str = "unofficial"
 

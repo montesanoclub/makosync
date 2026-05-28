@@ -37,7 +37,7 @@ class AppConfig:
     base_url: str = ""
     token: str = ""
     include_csv: bool = False
-    upload_raw: bool = True
+    upload_raw: bool = False  # makosmeets has no /ingest/file endpoint; JSON only
     replay_existing: bool = False
     tier: str = "unofficial"
 
