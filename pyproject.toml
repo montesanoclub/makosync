@@ -1,0 +1,23 @@
+[project]
+name = "dolphinsync"
+version = "0.1.0"
+description = "Sync CTS Dolphin .do3/.do4 files (parsed JSON + raw) to a web ingest endpoint."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+dolphinsync = "dolphinsync.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dolphinsync"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pyinstaller>=6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

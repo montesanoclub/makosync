@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+build/MakosDolphinSync/
+dist/
+*.spec
+*.exe
+.env
+config.local.json
+
+# Internal dev handoff notes — kept local, never published.
+HANDOFF.md
