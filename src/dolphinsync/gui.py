@@ -67,7 +67,7 @@ class GuiApp:
         row += 1
         ttk.Label(frm, text="Token (optional)").grid(row=row, column=0, sticky="w")
         self.token_var = tk.StringVar(value=self.cfg.token)
-        ttk.Entry(frm, textvariable=self.token_var, show="•").grid(row=row, column=1, columnspan=2, sticky="ew", padx=4)
+        ttk.Entry(frm, textvariable=self.token_var).grid(row=row, column=1, columnspan=2, sticky="ew", padx=4)
 
         # Options
         row += 1

@@ -1,7 +1,7 @@
 """Smoke test: invoke the built .exe against a capture HTTP server and
-assert the JSON + raw POSTs land. Proves the PyInstaller bundle actually
-runs (no ImportError, no missing modules) and that the headless code path
-works end-to-end.
+assert the parsed-heat JSON POST plus the raw-file upload land. Proves the
+PyInstaller bundle actually runs (no ImportError, no missing modules) and
+that the headless code path reaches both makosmeets ingest endpoints.
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 EXE = REPO / "dist" / "MakosDolphinSync.exe"
 SAMPLE = REPO / "samples" / "004-000-001A-0001.do4"
+# Must match dolphinsync.client.HEAT_PATH / FILE_PATH.
+HEAT_PATH = "/api/live-results/ingest/"
+FILE_PATH = "/api/live-results/ingest/file/"
 
 
 class Captured:
@@ -35,11 +38,11 @@ def make_handler(cap: Captured):
         def do_POST(self):
             n = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(n)
-            if self.path == "/ingest/heat":
+            if self.path == HEAT_PATH:
                 with cap.lock:
                     cap.heats.append(json.loads(body.decode("utf-8")))
                 self.send_response(200); self.end_headers(); return
-            if self.path == "/ingest/file":
+            if self.path == FILE_PATH:
                 s = body.decode("latin1", "replace")
                 fname = "?"
                 if 'filename="' in s:
@@ -88,7 +91,7 @@ def main() -> int:
         if proc.stderr:
             print("--- stderr ---"); print(proc.stderr)
 
-    # Give late raw uploads a moment to land.
+    # Give the heat + raw POSTs a moment to land.
     deadline = time.time() + 3.0
     while time.time() < deadline:
         with cap.lock:
@@ -103,7 +106,7 @@ def main() -> int:
     if proc.returncode != 0:
         failures.append(f"exe exit code {proc.returncode}")
     if not cap.heats:
-        failures.append("no /ingest/heat POST received")
+        failures.append(f"no {HEAT_PATH} POST received")
     else:
         h = cap.heats[0]
         if h.get("format") != "do4":
@@ -111,7 +114,7 @@ def main() -> int:
         if h.get("race_id") != "0001":
             failures.append(f"heat race_id != 0001: {h.get('race_id')!r}")
     if not cap.files:
-        failures.append("no /ingest/file POST received")
+        failures.append(f"no {FILE_PATH} POST received")
     else:
         fname, size = cap.files[0]
         if fname != SAMPLE.name:
