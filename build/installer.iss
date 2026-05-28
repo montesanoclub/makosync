@@ -3,7 +3,11 @@
 ; Requires the PyInstaller .exe already built (build\build_exe.ps1).
 
 #define MyAppName "Makos DolphinSync"
-#define MyAppVersion "0.1.1"
+; CI passes the real version from the git tag via /DMyAppVersion=x.y.z.
+; The fallback only applies to ad-hoc local builds.
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0-dev"
+#endif
 #define MyAppPublisher "Makos Swim"
 #define MyAppExeName "MakosDolphinSync.exe"
 

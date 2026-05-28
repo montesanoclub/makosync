@@ -14,10 +14,13 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from pathlib import Path
-from tkinter import filedialog, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from . import __version__
 from .config import AppConfig
+from .updater import check_for_update
 from .watcher import Watcher, WatcherConfig
 
 logger = logging.getLogger(__name__)
@@ -28,7 +31,7 @@ MAX_LOG_LINES = 2000  # cap the log widget so a long meet can't grow it unbounde
 class GuiApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Makos DolphinSync")
+        self.root.title(f"Makos DolphinSync v{__version__}")
         self.root.geometry("720x520")
         self.root.minsize(640, 420)
 
@@ -92,8 +95,10 @@ class GuiApp:
         self.status_label = ttk.Label(ctrl, text="idle")
         self.status_label.pack(side=tk.LEFT)
 
+        self.update_btn = ttk.Button(ctrl, text="Check for updates", command=self._check_updates)
+        self.update_btn.pack(side=tk.RIGHT)
         self.counters_label = ttk.Label(ctrl, text="sent: 0 heat · 0 raw · 0 errors")
-        self.counters_label.pack(side=tk.RIGHT)
+        self.counters_label.pack(side=tk.RIGHT, padx=8)
 
         # Log
         row += 1
@@ -150,6 +155,46 @@ class GuiApp:
         self.watcher = Watcher(wcfg, on_event=self.log_q.put)
         self.watcher.start()
         self.start_btn.configure(text="Stop")
+
+    # ---- manual update check ------------------------------------------
+
+    def _check_updates(self) -> None:
+        """Manual only — runs the GitHub check off the UI thread, shows result."""
+        self.update_btn.configure(state=tk.DISABLED, text="Checking…")
+
+        def work():
+            try:
+                res = (check_for_update(), None)
+            except Exception as e:  # network/parse — report, don't crash
+                res = (None, e)
+            try:
+                self.root.after(0, lambda: self._show_update_result(*res))
+            except Exception:
+                pass  # window closed mid-check
+
+        threading.Thread(target=work, name="dolphinsync-updchk", daemon=True).start()
+
+    def _show_update_result(self, info, err) -> None:
+        if not self._alive:
+            return
+        self.update_btn.configure(state=tk.NORMAL, text="Check for updates")
+        if err is not None:
+            messagebox.showwarning(
+                "Update check failed",
+                f"Couldn't reach GitHub to check for updates.\n\n{err}",
+            )
+            return
+        if info.available:
+            if messagebox.askyesno(
+                "Update available",
+                f"Version {info.latest} is available.\n"
+                f"You have {info.current}.\n\nOpen the download page?",
+            ):
+                webbrowser.open(info.release_url)
+        else:
+            messagebox.showinfo(
+                "Up to date", f"You have the latest version ({info.current})."
+            )
 
     # ---- polling for log + status -------------------------------------
 

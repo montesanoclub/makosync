@@ -42,6 +42,29 @@ HEAT_PATH = "/api/live-results/ingest/"
 FILE_PATH = "/api/live-results/ingest/file/"
 
 
+def normalize_base_url(raw: str) -> str:
+    """Coerce whatever the operator types into a clean base URL.
+
+    Accepts a bare host, a base URL, or the *full* ingest endpoint — with or
+    without a trailing slash — and returns a scheme'd base with no trailing
+    slash. send_heat/send_file append HEAT_PATH/FILE_PATH themselves, so if the
+    operator pastes the full endpoint we must peel it back to the base or we'd
+    POST to a doubled path (the bug that bit us in the field).
+    """
+    u = raw.strip()
+    if not u:
+        return ""
+    if "://" not in u:
+        u = "https://" + u
+    u = u.rstrip("/")
+    # Peel a pasted-in endpoint path back to the base (check the longer one first).
+    for suffix in (FILE_PATH.rstrip("/"), HEAT_PATH.rstrip("/")):
+        if u.endswith(suffix):
+            u = u[: -len(suffix)].rstrip("/")
+            break
+    return u
+
+
 @dataclass
 class IngestResult:
     ok: bool
@@ -67,7 +90,7 @@ def _heat_to_payload(heat: ParsedHeat, tier: str = "unofficial") -> dict[str, An
 
 class IngestClient:
     def __init__(self, base_url: str, token: str = "", timeout: float = DEFAULT_TIMEOUT):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = normalize_base_url(base_url)
         self.token = token or ""
         self.timeout = timeout
 
