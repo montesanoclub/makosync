@@ -1,6 +1,6 @@
 [project]
 name = "dolphinsync"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sync CTS Dolphin .do3/.do4 files (parsed JSON + raw) to a web ingest endpoint."
 requires-python = ">=3.11"
 dependencies = []

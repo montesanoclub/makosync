@@ -3,7 +3,7 @@
 ; Requires the PyInstaller .exe already built (build\build_exe.ps1).
 
 #define MyAppName "Makos DolphinSync"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #define MyAppPublisher "Makos Swim"
 #define MyAppExeName "MakosDolphinSync.exe"
 
