@@ -1,11 +1,12 @@
-"""HTTP client for the makosmeets live-results ingest endpoint.
+"""HTTP client for the makosmeets live-results ingest endpoints.
 
-Parsed heat times are POSTed as JSON to ``/api/live-results/ingest/`` (see
-``docs/ingest-contract.md``). The server feeds the pool-deck TV from these.
+Two channels per heat (see ``docs/ingest-contract.md``):
 
-An optional raw-file forensic upload (``POST {base_url}/ingest/file``) exists
-behind the ``upload_raw`` flag but is **off by default** — the makosmeets
-server has no file endpoint, so only enable it against a server that does.
+  * ``POST /api/live-results/ingest/`` — JSON parsed times, fired the instant a
+    file is parsed. This is what feeds the pool-deck TV.
+  * ``POST /api/live-results/ingest/file/`` — multipart raw file upload, fired
+    after the JSON succeeds. Forensic copy; the server archives it to R2 under
+    ``dolphin-raw/<date>/E<event>-H<heat>-<race_id>.<ext>``.
 
 Stdlib only (``urllib``). Bearer auth. Exponential backoff on 5xx/network;
 permanent fail on 4xx (we don't retry a bad request — the file would just
@@ -35,9 +36,10 @@ USER_AGENT = f"DolphinSync/{__version__}"
 DEFAULT_TIMEOUT = 8.0       # seconds — the meet-PC network can be flaky
 RETRY_DELAYS = (1, 2, 4, 8) # 4 retries (~15s total) then give up
 
-# The makosmeets live-results endpoint. trailingSlash: true on the server
+# The makosmeets live-results endpoints. trailingSlash: true on the server
 # 308-redirects a slashless POST and drops the body, so the slash is required.
 HEAT_PATH = "/api/live-results/ingest/"
+FILE_PATH = "/api/live-results/ingest/file/"
 
 
 @dataclass
@@ -81,7 +83,7 @@ class IngestClient:
     def send_file(self, path: Path, heat: ParsedHeat) -> IngestResult:
         body, content_type = _build_multipart(path, heat)
         return self._send_with_retry(
-            f"{self.base_url}/ingest/file", body,
+            f"{self.base_url}{FILE_PATH}", body,
             headers={"Content-Type": content_type},
         )
 
@@ -143,6 +145,9 @@ def _build_multipart(path: Path, heat: ParsedHeat) -> tuple[bytes, str]:
     parts.append(field("format", heat.format))
     parts.append(field("dataset", heat.dataset))
     parts.append(field("race_id", heat.race_id))
+    parts.append(field("event", str(heat.event)))
+    parts.append(field("heat", str(heat.heat)))
+    parts.append(field("round", heat.round))
     parts.append(
         (
             f"--{boundary}\r\n"

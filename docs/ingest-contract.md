@@ -41,19 +41,31 @@ Idempotency: the server keys results by `(event, heat)` and merges tiers
 (`unofficial` from Dolphin, `official` from Meet Mobile) without clobbering.
 Re-times arrive as new `race_id`s; the latest wins on display.
 
-## Optional: raw file forensic upload (off by default)
+## `POST /api/live-results/ingest/file/` — raw file (on by default)
 
-Behind the `upload_raw` flag (`--upload-raw`), the watcher will also POST the
-raw file as `multipart/form-data` to `{base_url}/ingest/file` (one `file` part
-plus `source_file`/`format`/`dataset`/`race_id` fields).
+Fired right after the JSON POST succeeds. `multipart/form-data`:
 
-**The makosmeets server has no `/ingest/file` endpoint** — leave `upload_raw`
-off against it. Only enable this against a server that implements the forensic
-sink.
+- `file` — the raw bytes of the `.do3`/`.do4`/`.csv`, filename preserved.
+- fields: `source_file`, `format`, `dataset`, `race_id`, `event`, `heat`,
+  `round` (so the server can name/foreground the file without re-parsing).
+
+The server archives it to R2 at:
+
+```
+dolphin-raw/<date>/E<event>-H<heat>-<race_id>.<ext>
+```
+
+`<date>` is the live meet's date (server-side, from `current_meet`), falling
+back to today. The `.do3` and `.do4` for one race land as distinct files (ext
+differs); a re-time is a new `race_id` so it's kept too. Re-sending the same
+file (restart/replay) is idempotent (same key). Disable with `--no-raw`.
+
+Response: `200 OK` (`{ok, key, bytes}`) or error. Retried on `5xx`/network.
 
 ## Rationale
 
-- **JSON is what the TV needs**: the pool-deck scoreboard wants times in <1s;
-  the JSON path fires per file with no queueing.
+- **Two channels** so JSON lands as fast as possible (TV wants times in <1s),
+  while the raw `.do` is the forensic copy — re-parseable server-side if the
+  client's parser is ever wrong about an edge case.
 - **Bearer auth, fail-closed**: the pool-deck TV is a phantom-result hazard; an
   open ingest endpoint can be used to fabricate times.

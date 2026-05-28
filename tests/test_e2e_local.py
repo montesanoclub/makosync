@@ -55,7 +55,7 @@ def _make_handler(captured: _Captured):
                     captured.heat_posts.append(payload)
                 self.send_response(200); self.end_headers(); return
 
-            if self.path == "/ingest/file":
+            if self.path == "/api/live-results/ingest/file/":
                 # crude multipart sniff — just record name + size
                 ct = self.headers.get("Content-Type", "")
                 fname = "?"
