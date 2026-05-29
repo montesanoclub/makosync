@@ -89,6 +89,11 @@ _COURSE_MAP = {"1": "SCY", "2": "SCM", "3": "SCY", "4": "LCY", "5": "LCM"}
 _MDB_EXPORT_ENV = "MAKOSYNC_MDB_EXPORT"
 _MDB_EXPORT_NAME = "mdb-export.exe" if os.name == "nt" else "mdb-export"
 
+# Spawn mdb-export with no console window. The shipped app is windowed
+# (--noconsole), so without this each table read flashes a console — annoyingly,
+# every poll cycle during a meet, not just on the events push.
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
 
 # ---- JS-faithful numeric parsing -----------------------------------------
 # convert.mjs runs on strings from mdb-export and uses JS parseFloat/parseInt,
@@ -379,7 +384,7 @@ def _export(mdb_path: Path, table: str) -> list[dict[str, str]]:
     try:
         proc = subprocess.run(
             [exe, "-D", "%Y-%m-%d %H:%M:%S", str(mdb_path), table],
-            capture_output=True, text=True, check=False,
+            capture_output=True, text=True, check=False, **_NO_WINDOW,
         )
     except FileNotFoundError as e:
         raise RuntimeError(
