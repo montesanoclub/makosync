@@ -52,6 +52,15 @@ class AppConfig:
     mdb_path: str = ""        # path to the live Hy-Tek MM .mdb on the scoring PC
     poll_interval: float = 12.0  # seconds between MDB re-reads
 
+    # --- Meet Manager IMPORT (receiver) mode ---
+    # Runs on the scoring PC. Pulls the Dolphin .do3 files (relayed via
+    # makosmeets), renamed <meetid>-000-E<ev>_H<ht>.do3, into the folder Meet
+    # Manager imports Dolphin times from — so the operator just Get-Times instead
+    # of hunting for the right file. Shares base_url + token with the other modes.
+    import_dir: str = ""          # where to drop renamed .do3 for Meet Manager
+    import_poll: float = 2.0      # seconds between server polls
+    import_notify: bool = True    # Windows toast when a heat lands
+
     # --- Dolphin-events relay ---
     # Dolphin side: where to write the events CSV pulled from makosmeets.
     # (Manager side builds it from the .mdb above — no source file to configure.)

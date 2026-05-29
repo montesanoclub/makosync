@@ -32,10 +32,11 @@ logger = logging.getLogger(__name__)
 
 MAX_LOG_LINES = 2000  # cap the log widget so a long meet can't grow it unbounded
 
-MODE_LABELS = {"dolphin": "Dolphin", "manager": "Manager"}
+MODE_LABELS = {"dolphin": "Dolphin", "manager": "Manager", "mm-import": "MM Import"}
 MODE_BLURB = {
     "dolphin": "Watch a CTS Dolphin folder · unofficial times",
     "manager": "Hy-Tek Meet Manager database · official results",
+    "mm-import": "Pull Dolphin .do3 into Meet Manager · toast per heat",
 }
 
 
@@ -74,6 +75,9 @@ class GuiApp:
         self._show_launcher()
         self.root.after(200, self._drain_log)
         self.root.after(1000, self._refresh_status)
+        # Quiet GitHub-release check shortly after launch; prompts only if a newer
+        # version exists, silent if up-to-date or offline. (Manual button too.)
+        self.root.after(1500, self._startup_update_check)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ---- icon ---------------------------------------------------------
@@ -130,13 +134,13 @@ class GuiApp:
         style = ttk.Style()
         style.configure("Mode.TButton", font=("Segoe UI", 13, "bold"), padding=(24, 16))
 
-        for col, mode in enumerate(("dolphin", "manager")):
+        for col, mode in enumerate(("dolphin", "manager", "mm-import")):
             cell = ttk.Frame(btns)
             cell.grid(row=0, column=col, padx=12)
-            ttk.Button(cell, text=MODE_LABELS[mode], style="Mode.TButton", width=16,
+            ttk.Button(cell, text=MODE_LABELS[mode], style="Mode.TButton", width=14,
                        command=lambda m=mode: self._enter_mode(m)).pack()
             ttk.Label(cell, text=MODE_BLURB[mode], foreground="#777",
-                      wraplength=190, justify="center").pack(pady=(6, 0))
+                      wraplength=170, justify="center").pack(pady=(6, 0))
 
         ttk.Label(frm, text=f"v{__version__}", foreground="#999").pack(side=tk.BOTTOM, pady=(18, 0))
 
@@ -167,11 +171,22 @@ class GuiApp:
             self.folder_var = tk.StringVar(value=self.cfg.folder)
             ttk.Entry(frm, textvariable=self.folder_var).grid(row=row, column=1, sticky="ew", padx=4)
             ttk.Button(frm, text="Browse…", command=self._browse_folder).grid(row=row, column=2)
-        else:
+        elif mode == "manager":
             ttk.Label(frm, text="Meet Manager .mdb").grid(row=row, column=0, sticky="w")
             self.mdb_var = tk.StringVar(value=self.cfg.mdb_path)
             ttk.Entry(frm, textvariable=self.mdb_var).grid(row=row, column=1, sticky="ew", padx=4)
             ttk.Button(frm, text="Browse…", command=self._browse_mdb).grid(row=row, column=2)
+        else:  # mm-import
+            ttk.Label(frm, text="MM import folder").grid(row=row, column=0, sticky="w")
+            # Default to the folder the Meet Manager .mdb lives in — that's the
+            # folder MM's Get-Times picker already points at, so the operator
+            # doesn't pick a second path.
+            default_dir = self.cfg.import_dir
+            if not default_dir and self.cfg.mdb_path:
+                default_dir = str(Path(self.cfg.mdb_path).parent)
+            self.import_dir_var = tk.StringVar(value=default_dir)
+            ttk.Entry(frm, textvariable=self.import_dir_var).grid(row=row, column=1, sticky="ew", padx=4)
+            ttk.Button(frm, text="Browse…", command=self._browse_import_dir).grid(row=row, column=2)
 
         # URL (shared)
         row += 1
@@ -196,27 +211,36 @@ class GuiApp:
             ttk.Checkbutton(opt_frm, text="Also watch .csv", variable=self.csv_var).pack(side=tk.LEFT, padx=2)
             ttk.Checkbutton(opt_frm, text="Upload raw files", variable=self.raw_var).pack(side=tk.LEFT, padx=8)
             ttk.Checkbutton(opt_frm, text="Replay existing on start", variable=self.replay_var).pack(side=tk.LEFT, padx=2)
-        else:
+        elif mode == "manager":
             ttk.Label(opt_frm, text="Poll every").pack(side=tk.LEFT, padx=(2, 4))
             self.poll_var = tk.StringVar(value=f"{self.cfg.poll_interval:g}")
             ttk.Spinbox(opt_frm, from_=3, to=120, increment=1, width=5, textvariable=self.poll_var).pack(side=tk.LEFT)
             ttk.Label(opt_frm, text="seconds  ·  pushes official results (places, DQs)").pack(side=tk.LEFT, padx=4)
+        else:  # mm-import
+            ttk.Label(opt_frm, text="Poll every").pack(side=tk.LEFT, padx=(2, 4))
+            self.import_poll_var = tk.StringVar(value=f"{self.cfg.import_poll:g}")
+            ttk.Spinbox(opt_frm, from_=1, to=30, increment=1, width=5, textvariable=self.import_poll_var).pack(side=tk.LEFT)
+            ttk.Label(opt_frm, text="seconds").pack(side=tk.LEFT, padx=(4, 8))
+            self.import_notify_var = tk.BooleanVar(value=self.cfg.import_notify)
+            ttk.Checkbutton(opt_frm, text="Toast on new heat", variable=self.import_notify_var).pack(side=tk.LEFT)
 
-        # Dolphin-events relay: Manager pushes the seeded event list; Dolphin loads it.
-        row += 1
-        relay = ttk.Frame(frm)
-        relay.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(6, 0))
-        if mode == "manager":
-            ttk.Button(relay, text="Push events → Dolphin", command=self._push_events).pack(side=tk.LEFT)
-            ttk.Label(relay, text="(built from the .mdb above)", foreground="#999").pack(side=tk.LEFT, padx=6)
-        else:
-            ttk.Button(relay, text="Load events from MM", command=self._load_events).pack(side=tk.LEFT)
-            ttk.Label(relay, text="→ CSV:").pack(side=tk.LEFT, padx=(8, 2))
-            self.events_csv_var = tk.StringVar(value=self.cfg.dolphin_events_csv)
-            ttk.Entry(relay, textvariable=self.events_csv_var, width=22).pack(side=tk.LEFT)
-            ttk.Button(relay, text="…", width=2, command=self._browse_events_csv).pack(side=tk.LEFT, padx=2)
-        self.events_status = ttk.Label(relay, text="events on server: —", foreground="#777")
-        self.events_status.pack(side=tk.RIGHT)
+        # Dolphin-events relay: Manager pushes the seeded event list; Dolphin loads
+        # it. mm-import has no events relay, so the row is skipped there.
+        if mode in ("dolphin", "manager"):
+            row += 1
+            relay = ttk.Frame(frm)
+            relay.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+            if mode == "manager":
+                ttk.Button(relay, text="Push events → Dolphin", command=self._push_events).pack(side=tk.LEFT)
+                ttk.Label(relay, text="(built from the .mdb above)", foreground="#999").pack(side=tk.LEFT, padx=6)
+            else:  # dolphin
+                ttk.Button(relay, text="Load events from MM", command=self._load_events).pack(side=tk.LEFT)
+                ttk.Label(relay, text="→ CSV:").pack(side=tk.LEFT, padx=(8, 2))
+                self.events_csv_var = tk.StringVar(value=self.cfg.dolphin_events_csv)
+                ttk.Entry(relay, textvariable=self.events_csv_var, width=22).pack(side=tk.LEFT)
+                ttk.Button(relay, text="…", width=2, command=self._browse_events_csv).pack(side=tk.LEFT, padx=2)
+            self.events_status = ttk.Label(relay, text="events on server: —", foreground="#777")
+            self.events_status.pack(side=tk.RIGHT)
 
         # Start/Stop + status
         row += 1
@@ -248,7 +272,8 @@ class GuiApp:
         # Autosave fields on edit (debounced) so a close/kill never loses
         # URL/token/paths — config is re-read into the fields on next launch.
         for _name in ("url_var", "token_var", "folder_var", "mdb_var", "poll_var",
-                      "events_csv_var", "csv_var", "raw_var", "replay_var"):
+                      "events_csv_var", "csv_var", "raw_var", "replay_var",
+                      "import_dir_var", "import_poll_var", "import_notify_var"):
             _v = getattr(self, _name, None)
             if _v is not None:
                 _v.trace_add("write", self._schedule_persist)
@@ -277,6 +302,11 @@ class GuiApp:
         if f:
             self.mdb_var.set(f)
 
+    def _browse_import_dir(self) -> None:
+        d = filedialog.askdirectory(initialdir=self.import_dir_var.get() or "C:/")
+        if d:
+            self.import_dir_var.set(d)
+
     def _toggle(self) -> None:
         if self.watcher and self.watcher.is_running():
             self.watcher.stop()
@@ -299,6 +329,8 @@ class GuiApp:
 
         if self.mode == "manager":
             watcher = self._make_mm_watcher(url, token)
+        elif self.mode == "mm-import":
+            watcher = self._make_mm_import_watcher(url, token)
         else:
             watcher = self._make_dolphin_watcher(url, token)
         if watcher is None:
@@ -348,6 +380,26 @@ class GuiApp:
         self.cfg.poll_interval = poll
         mcfg = MmWatcherConfig(mdb_path=Path(mdb), base_url=url, token=token, poll_interval=poll)
         return MmWatcher(mcfg, on_event=self.log_q.put)
+
+    def _make_mm_import_watcher(self, url: str, token: str):
+        from .mm_import import MmImportConfig, MmImportWatcher
+
+        folder = self.import_dir_var.get().strip()
+        if not folder:
+            self._log_line("ERROR: Meet Manager import folder is required")
+            return None
+        try:
+            poll = max(1.0, float(self.import_poll_var.get()))
+        except ValueError:
+            poll = 2.0
+        self.cfg.import_dir = folder
+        self.cfg.import_poll = poll
+        self.cfg.import_notify = bool(self.import_notify_var.get())
+        mcfg = MmImportConfig(
+            base_url=url, import_dir=Path(folder), token=token,
+            poll_interval=poll, notify=self.cfg.import_notify,
+        )
+        return MmImportWatcher(mcfg, on_event=self.log_q.put)
 
     # ---- dolphin-events relay -----------------------------------------
 
@@ -469,7 +521,32 @@ class GuiApp:
         self._log_line(f"loaded {lines} events (server updated {updated_at or '?'}); wrote {csv_path}")
         self._set_events_status(f"events on server: {updated_at or 'ok'}")
 
-    # ---- manual update check ------------------------------------------
+    # ---- update checks (startup + manual) -----------------------------
+
+    def _startup_update_check(self) -> None:
+        """On launch: check GitHub releases off the UI thread; prompt only if a
+        newer version exists. Stays silent when up-to-date or offline."""
+        def work():
+            try:
+                info = check_for_update()
+            except Exception:  # noqa: BLE001 — offline/API hiccup: silent on startup
+                info = None
+            if info is not None:
+                try:
+                    self.root.after(0, lambda: self._maybe_prompt_update(info))
+                except Exception:
+                    pass  # window closed mid-check
+        threading.Thread(target=work, name="makosync-startupchk", daemon=True).start()
+
+    def _maybe_prompt_update(self, info) -> None:
+        if not self._alive or not info.available:
+            return
+        if messagebox.askyesno(
+            "Update available",
+            f"MakoSync {info.latest} is available.\nYou have {info.current}.\n\n"
+            f"Open the download page?",
+        ):
+            webbrowser.open(info.release_url)
 
     def _check_updates(self) -> None:
         """Manual only — runs the GitHub check off the UI thread, shows result."""
@@ -554,6 +631,8 @@ class GuiApp:
                     color, label = "#2ca02c", "running"
                 if self.mode == "manager":
                     self.counters_label.configure(text=f"sent: {s.sent_heat} official · {s.errors} errors")
+                elif self.mode == "mm-import":
+                    self.counters_label.configure(text=f"pulled: {s.sent_file} · {s.errors} errors")
                 else:
                     self.counters_label.configure(text=f"sent: {s.sent_heat} heat · {s.sent_file} raw · {s.errors} errors")
             self.status_canvas.itemconfigure(self.status_dot, fill=color)
@@ -605,6 +684,15 @@ class GuiApp:
                     self.cfg.poll_interval = max(3.0, float(self.poll_var.get()))
                 except (ValueError, tk.TclError):
                     pass
+            if hasattr(self, "import_dir_var"):
+                self.cfg.import_dir = self.import_dir_var.get().strip()
+            if hasattr(self, "import_poll_var"):
+                try:
+                    self.cfg.import_poll = max(1.0, float(self.import_poll_var.get()))
+                except (ValueError, tk.TclError):
+                    pass
+            if hasattr(self, "import_notify_var"):
+                self.cfg.import_notify = bool(self.import_notify_var.get())
             self.cfg.save()
         except Exception:
             logger.exception("settings autosave failed")

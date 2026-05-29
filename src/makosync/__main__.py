@@ -1,8 +1,10 @@
 """Entry point for `makosync` — GUI by default, --headless for CLI.
 
-Two producer modes (``--mode``):
+Three modes (``--mode``):
   * ``dolphin`` (default) — watch a CTS Dolphin folder, push unofficial times.
   * ``manager`` — read the Hy-Tek Meet Manager ``.mdb`` and push official results.
+  * ``mm-import`` — pull relayed Dolphin ``.do3`` files (renamed with event/heat)
+    into the folder Meet Manager imports from; toast on each new heat.
 """
 
 from __future__ import annotations
@@ -31,8 +33,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Push live swim results to makosmeets, from CTS Dolphin files or a Meet Manager .mdb.",
     )
     ap.add_argument("--headless", action="store_true", help="No GUI — run from the CLI.")
-    ap.add_argument("--mode", default="dolphin", choices=["dolphin", "manager"],
-                    help="Producer mode: 'dolphin' (folder watch) or 'manager' (Hy-Tek Meet Manager .mdb).")
+    ap.add_argument("--mode", default="dolphin", choices=["dolphin", "manager", "mm-import"],
+                    help="'dolphin' (folder watch), 'manager' (Hy-Tek Meet Manager .mdb), "
+                         "or 'mm-import' (pull relayed Dolphin .do3 into MM's import folder).")
     ap.add_argument("--url", help="Base URL of the ingest server, e.g. http://localhost:8080")
     ap.add_argument("--token", default="", help="Optional bearer token; omitted if blank.")
     ap.add_argument("--once", action="store_true",
@@ -52,6 +55,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     g_mm.add_argument("--mdb-path", help="Path to the live Meet Manager .mdb (required for --mode manager).")
     g_mm.add_argument("--poll-interval", type=float, default=12.0,
                       help="Seconds between MDB re-reads in Manager mode (default: 12).")
+
+    g_imp = ap.add_argument_group("mm-import mode")
+    g_imp.add_argument("--import-dir",
+                       help="Folder Meet Manager imports Dolphin times from (required for --mode mm-import).")
+    g_imp.add_argument("--import-poll", type=float, default=2.0,
+                       help="Seconds between server polls in mm-import mode (default: 2).")
+    g_imp.add_argument("--no-notify", action="store_true",
+                       help="Disable the Windows toast on each pulled heat (mm-import).")
     return ap.parse_args(argv)
 
 
@@ -129,6 +140,31 @@ def run_mm_headless(args: argparse.Namespace) -> int:
     return _run_until_stopped(watcher)
 
 
+def run_mm_import_headless(args: argparse.Namespace) -> int:
+    from .mm_import import MmImportConfig, MmImportWatcher
+
+    missing = [f for f in ("import_dir", "url") if not getattr(args, f)]
+    if missing:
+        flags = ", ".join("--" + m.replace("_", "-") for m in missing)
+        print(f"--mode mm-import --headless requires: {flags}", file=sys.stderr)
+        return 2
+
+    cfg = MmImportConfig(
+        base_url=args.url,
+        import_dir=Path(args.import_dir),
+        token=args.token,
+        poll_interval=args.import_poll,
+        notify=not bool(args.no_notify),
+    )
+    watcher = MmImportWatcher(cfg, on_event=_safe_print)
+
+    if args.once:
+        watcher._cycle()  # one fetch+download pass, then exit (smoke test)
+        return 0
+
+    return _run_until_stopped(watcher)
+
+
 def _run_until_stopped(watcher) -> int:
     """Run a watcher long-running; Ctrl-C / SIGTERM stops it cleanly."""
     def _shutdown(*_):
@@ -150,6 +186,8 @@ def _run_until_stopped(watcher) -> int:
 def run_headless(args: argparse.Namespace) -> int:
     if args.mode == "manager":
         return run_mm_headless(args)
+    if args.mode == "mm-import":
+        return run_mm_import_headless(args)
     return run_dolphin_headless(args)
 
 
