@@ -135,11 +135,16 @@ class IngestClient:
 
     # ---- dolphin-events relay (Manager pushes, Dolphin loads) ----------
 
-    def push_dolphin_events(self, events: list[dict]) -> tuple[IngestResult, str | None]:
-        """Push the seeded event list to makosmeets; returns (result, server updated_at)."""
+    def push_dolphin_events_csv(self, csv_text: str, name: str = "") -> tuple[IngestResult, str | None]:
+        """Push a Dolphin events CSV (verbatim text) to makosmeets; returns (result, updated_at).
+
+        The CSV is relayed exactly as produced by events2dolphin — MakoSync does
+        not parse or reformat it, so whatever imports into Dolphin today still does.
+        """
         payload = {
-            "events": events,
-            "count": len(events),
+            "csv": csv_text,
+            "name": name,
+            "lines": sum(1 for ln in csv_text.splitlines() if ln.strip()),
             "captured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         body = json.dumps(payload).encode("utf-8")
@@ -147,23 +152,25 @@ class IngestClient:
             f"{self.base_url}{DOLPHIN_EVENTS_PATH}", body,
             headers={"Content-Type": "application/json"}, method="POST",
         )
-        updated_at = _updated_at_from(res.body) if res.ok else None
-        return res, updated_at
+        return res, (_updated_at_from(res.body) if res.ok else None)
 
-    def fetch_dolphin_events(self) -> tuple[IngestResult, list[dict], str | None]:
-        """Fetch the event list from makosmeets; returns (result, events, server updated_at)."""
+    def fetch_dolphin_events_csv(self) -> tuple[IngestResult, str, str, str | None]:
+        """Fetch the Dolphin events CSV; returns (result, csv_text, name, server updated_at)."""
         res = self._send_with_retry(
             f"{self.base_url}{DOLPHIN_EVENTS_PATH}", None,
             headers={"Accept": "application/json"}, method="GET",
         )
         if not res.ok:
-            return res, [], None
+            return res, "", "", None
         try:
             data = json.loads(res.body) if res.body else {}
         except ValueError:
-            return IngestResult(ok=False, status=res.status, detail="invalid JSON from server"), [], None
-        events = data.get("events") if isinstance(data, dict) else None
-        return res, (events if isinstance(events, list) else []), _updated_at_from(res.body)
+            return IngestResult(ok=False, status=res.status, detail="invalid JSON from server"), "", "", None
+        if not isinstance(data, dict):
+            data = {}
+        csv_text = data.get("csv")
+        name = data.get("name")
+        return res, (csv_text if isinstance(csv_text, str) else ""), (name if isinstance(name, str) else ""), _updated_at_from(res.body)
 
     # ---- internals ----------------------------------------------------
 

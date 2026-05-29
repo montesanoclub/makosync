@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from makosync import mdb_reader as mr
 from makosync.mdb_reader import (
-    _csv_to_rows, _parse_float, _parse_int, build_event_list, result_time,
-    rows_to_heats, write_dolphin_events_csv,
+    _csv_to_rows, _parse_float, _parse_int, build_dolphin_events_csv, result_time,
+    rows_to_heats,
 )
 
 
@@ -235,40 +235,41 @@ def test_resolve_mdb_export_env_override(monkeypatch):
     assert mr._resolve_mdb_export() == r"C:\custom\mdb-export.exe"
 
 
-# ---- event list (Dolphin relay) -------------------------------------------
+# ---- Dolphin events CSV (events2dolphin format) ---------------------------
+# Format verified byte-for-byte against a real events2dolphin output:
+#   event,NAME,heats,1,A  (CRLF, no header). NAME = GIRLS/BOYS/MIXED + 8&U/9-10 +
+#   dist + FREE/BACK/BREAST/FLY / MEDLEY RELAY / FREE RELAY.
 
-def test_build_event_list_names_and_heat_counts():
+def test_build_dolphin_events_csv_format():
     events = _csv_to_rows(
         "Event_ptr,Event_no,Event_gender,Low_age,High_Age,Event_dist,Event_stroke,Ind_rel\n"
-        '10,1,"M","9","10","50","A","I"\n'
-        '20,2,"X","0","0","200","E","R"\n'
-        '30,3,"F","0","12","100","B","I"\n'  # no entries -> excluded
+        '1,1,"F","0","8","100","E","R"\n'     # GIRLS 8&U 100 MEDLEY RELAY
+        '11,11,"F","0","6","25","A","I"\n'    # GIRLS 6&U 25 FREE (1 heat)
+        '12,13,"F","0","6","25","A","I"\n'    # same name, Event_no 13, 2 heats (exhibition)
+        '57,57,"X","0","8","100","A","R"\n'   # MIXED 8&U 100 FREE RELAY
+        '50,50,"M","9","10","50","C","I"\n'   # BOYS 9-10 50 BREAST
+        '99,99,"F","11","12","50","B","I"\n'  # no entries -> excluded
     )
-    entries = _csv_to_rows("Event_ptr,Pre_heat,Fin_heat\n10,1,1\n10,2,2\n10,2,2\n")  # ev1: heats {1,2}
-    relays = _csv_to_rows("Event_ptr,Pre_heat\n20,1\n")                              # ev2: heat {1}
-    meet = _csv_to_rows("Meet_course\n5\n")  # 5 -> LCM -> "Meter"
-    lst = build_event_list(events, entries, relays, meet)
-    assert lst == [
-        {"event": 1, "name": "Boys 9-10 50 Meter Freestyle", "heats": 2},
-        {"event": 2, "name": "Mixed Open 200 Meter Medley", "heats": 1},
-    ]
+    entries = _csv_to_rows(
+        "Event_ptr,Pre_heat\n11,1\n12,1\n12,2\n50,1\n"  # ptr11:1heat, ptr12:2heats, ptr50:1heat
+    )
+    relays = _csv_to_rows("Event_ptr,Pre_heat\n1,1\n57,1\n")  # ptr1:1, ptr57:1
+    out = build_dolphin_events_csv(events, entries, relays)
+    assert out == (
+        "1,GIRLS 8&U 100 MEDLEY RELAY,1,1,A\r\n"
+        "11,GIRLS 6&U 25 FREE,1,1,A\r\n"
+        "13,GIRLS 6&U 25 FREE,2,1,A\r\n"
+        "50,BOYS 9-10 50 BREAST,1,1,A\r\n"
+        "57,MIXED 8&U 100 FREE RELAY,1,1,A\r\n"
+    )
 
 
-def test_build_event_list_no_meet_course_omits_unit():
+def test_build_dolphin_events_csv_age_and_stroke_maps():
     events = _csv_to_rows(
-        "Event_ptr,Event_no,Event_gender,Low_age,High_Age,Event_dist,Event_stroke\n"
-        '10,1,"F","11","12","100","C"\n'
+        "Event_ptr,Event_no,Event_gender,Low_age,High_Age,Event_dist,Event_stroke,Ind_rel\n"
+        '1,1,"M","15","17","50","D","I"\n'   # BOYS 15-17 50 FLY
+        '2,2,"F","13","14","50","B","I"\n'   # GIRLS 13-14 50 BACK
     )
-    entries = _csv_to_rows("Event_ptr,Pre_heat\n10,3\n")
-    lst = build_event_list(events, entries, [], None)
-    assert lst == [{"event": 1, "name": "Girls 11-12 100 Breaststroke", "heats": 1}]
-
-
-def test_write_dolphin_events_csv(tmp_path):
-    p = tmp_path / "ev.csv"
-    n = write_dolphin_events_csv(p, [
-        {"event": 1, "name": "Boys 50 Free", "heats": 2},
-        {"event": 2, "name": "Girls 100 Back", "heats": 1},
-    ])
-    assert n == 2
-    assert p.read_text(encoding="utf-8").splitlines() == ["1,Boys 50 Free,2", "2,Girls 100 Back,1"]
+    entries = _csv_to_rows("Event_ptr,Pre_heat\n1,1\n2,1\n")
+    out = build_dolphin_events_csv(events, entries, [])
+    assert out == "1,BOYS 15-17 50 FLY,1,1,A\r\n2,GIRLS 13-14 50 BACK,1,1,A\r\n"

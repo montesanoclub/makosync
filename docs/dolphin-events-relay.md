@@ -10,9 +10,13 @@ This is **not historical data** — it's a per-meet scratch mailbox in KV, the s
 spirit as the live-results tier. Test/garbage pushes never touch `/athlete`,
 `/team`, or any historical JSON.
 
-The MakoSync client side is **already built** (`src/makosync/client.py`:
-`push_dolphin_events` / `fetch_dolphin_events`; path `DOLPHIN_EVENTS_PATH`). This
-doc is the server contract to implement.
+MakoSync **generates the CSV from the Meet Manager `.mdb`** itself (no
+events2dolphin step, no source file to pick) — `mdb_reader.build_dolphin_events_csv`,
+verified byte-for-byte against a real events2dolphin output. The relay just carries
+that CSV **text** verbatim, so the server is a dumb mailbox: it stores a string and
+returns it. Client side is built (`src/makosync/client.py`:
+`push_dolphin_events_csv` / `fetch_dolphin_events_csv`; path `DOLPHIN_EVENTS_PATH`).
+This doc is the server contract to implement.
 
 ## Endpoint
 
@@ -28,27 +32,24 @@ CORS headers as `ingest/route.ts`.
 Request body (what the client sends):
 ```jsonc
 {
-  "events": [
-    { "event": 1, "name": "Boys 9-10 50 Meter Freestyle", "heats": 2 },
-    { "event": 2, "name": "Mixed Open 200 Meter Medley", "heats": 1 }
-  ],
-  "count": 2,
-  "captured_at": "2026-05-29T17:21:58Z"   // client clock; informational
+  "csv": "1,GIRLS 8&U 100 MEDLEY RELAY,1,1,A\r\n11,GIRLS 6&U 25 FREE,1,1,A\r\n...",
+  "name": "testmeet3.mdb",                 // source .mdb filename; informational
+  "lines": 79,                             // event count; informational
+  "captured_at": "2026-05-29T17:21:58Z"    // client clock; informational
 }
 ```
-- `event` (int, ≥1), `name` (string, operator-facing label — not parity-keyed),
-  `heats` (int, ≥1). Validate loosely; drop malformed rows rather than 400 the
-  whole push if you like.
-- **Store** the list in KV under the live meet, overwriting any prior push:
-  suggested key `dolphin_events:<current_meet>` (fall back to a fixed
-  `dolphin_events` key if no meet is live). Stamp **`updated_at` = server time**
-  on every write (don't trust `captured_at`).
+- `csv` is an **opaque text blob** (the Dolphin events file, CRLF-delimited).
+  Don't parse or reformat it — store it verbatim.
+- **Store** it in KV under the live meet, overwriting any prior push: suggested
+  key `dolphin_events:<current_meet>` (fall back to a fixed `dolphin_events` key
+  if no meet is live). Stamp **`updated_at` = server time** on every write (don't
+  trust `captured_at`).
 - Give it a TTL or clear it when a new meet is set live, so it doesn't linger
   across meets (a stale list is worse than none).
 
 Response `200`:
 ```json
-{ "ok": true, "updated_at": "2026-05-29T17:22:01Z", "count": 2 }
+{ "ok": true, "updated_at": "2026-05-29T17:22:01Z", "lines": 79 }
 ```
 The client reads `updated_at` and shows it as "events on server: …".
 
@@ -56,10 +57,10 @@ The client reads `updated_at` and shows it as "events on server: …".
 
 Response `200` when present:
 ```json
-{ "events": [ /* same shape as posted */ ], "updated_at": "2026-05-29T17:22:01Z", "count": 2 }
+{ "csv": "1,GIRLS 8&U 100 MEDLEY RELAY,1,1,A\r\n...", "name": "testmeet3.mdb", "updated_at": "2026-05-29T17:22:01Z", "lines": 79 }
 ```
 When nothing has been pushed for the live meet, return `200` with
-`{ "events": [], "updated_at": null }` (the client treats empty as "none yet" —
+`{ "csv": "", "updated_at": null }` (the client treats empty as "none yet" —
 **don't** require a 404, though a 404 is also handled as "not available").
 
 ## Notes / decisions
@@ -77,10 +78,11 @@ When nothing has been pushed for the live meet, return `200` with
   the already-baked meet, that's a viable alternative — but then it only works
   for meets that were imported, and needs a GET over the baked events.)
 
-## Open item (client side, gated on hardware)
+## CSV format (resolved)
 
-The exact CSV columns/headers the installed **CTS Dolphin** build imports on its
-Events screen are unverified. `mdb_reader.write_dolphin_events_csv` currently
-writes headerless `event,name,heats` (events2dolphin style). Confirm on the
-Dolphin PC (`10.1.1.152`, VNC) before relying on it at a live meet, and adjust
-that one writer if needed — no server change required.
+The CSV format is **verified** — `mdb_reader.build_dolphin_events_csv` reproduces
+a real events2dolphin file byte-for-byte for a 96-event RCSL meet:
+`Event_no,NAME,heats,1,A` per line, CRLF, no header, where NAME is
+`GIRLS/BOYS/MIXED` + `8&U`/`9-10`/`15-17` + distance + `FREE/BACK/BREAST/FLY` or
+`MEDLEY RELAY`/`FREE RELAY`. The server never sees any of this — it just stores
+and returns the `csv` string.

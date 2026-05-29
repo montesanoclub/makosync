@@ -30,7 +30,7 @@ DOLPHIN_EVENTS_PATH = "/api/live-results/dolphin-events/"
 
 # In-memory relay mailbox (mirrors the KV the real endpoint will use).
 _EVENTS_LOCK = threading.Lock()
-_EVENTS_STORE: dict = {"events": [], "updated_at": None, "count": 0}
+_EVENTS_STORE: dict = {"csv": "", "name": "", "updated_at": None, "lines": 0}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -74,18 +74,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == DOLPHIN_EVENTS_PATH:
             try:
                 payload = json.loads(body.decode("utf-8"))
-                events = payload.get("events") or []
+                csv_text = payload.get("csv") or ""
+                name = payload.get("name") or ""
             except Exception:
                 return self._json({"ok": False, "error": "invalid JSON"}, 400)
+            lines = sum(1 for ln in csv_text.splitlines() if ln.strip())
             updated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             with _EVENTS_LOCK:
-                _EVENTS_STORE.update(events=events, count=len(events), updated_at=updated_at)
-            print(f"\n[{ts}] DOLPHIN-EVENTS push: {len(events)} events (updated_at {updated_at})")
-            for e in events[:8]:
-                print(f"        E{e.get('event')}  {e.get('name')}  ({e.get('heats')} heats)")
-            if len(events) > 8:
-                print(f"        ... +{len(events) - 8} more")
-            return self._json({"ok": True, "updated_at": updated_at, "count": len(events)})
+                _EVENTS_STORE.update(csv=csv_text, name=name, lines=lines, updated_at=updated_at)
+            print(f"\n[{ts}] DOLPHIN-EVENTS push: {lines} events ({name}, updated_at {updated_at})")
+            for ln in csv_text.splitlines()[:6]:
+                print(f"        {ln}")
+            if lines > 6:
+                print(f"        ... +{lines - 6} more")
+            return self._json({"ok": True, "updated_at": updated_at, "lines": lines})
         self.send_response(404)
         self.end_headers()
 
@@ -94,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
             with _EVENTS_LOCK:
                 snap = dict(_EVENTS_STORE)
             ts = datetime.now().strftime("%H:%M:%S")
-            print(f"[{ts}] DOLPHIN-EVENTS load: {snap['count']} events (updated_at {snap['updated_at']})")
+            print(f"[{ts}] DOLPHIN-EVENTS load: {snap['lines']} events (updated_at {snap['updated_at']})")
             return self._json(snap)
         self.send_response(404)
         self.end_headers()

@@ -76,13 +76,12 @@ _EVENT_TABLE = "Event"
 _ENTRY_TABLE = "Entry"
 _RELAY_TABLE = "Relay"
 _ATHLETE_TABLE = "Athlete"
-_MEET_TABLE = "Meet"
-
-# Code maps for building human event names (mirror convert.mjs).
-_STROKE_MAP = {"A": "Freestyle", "B": "Backstroke", "C": "Breaststroke",
-               "D": "Butterfly", "E": "Medley", "F": "Individual Medley"}
-_GENDER_MAP = {"F": "Girls", "M": "Boys", "X": "Mixed"}
-_COURSE_MAP = {"1": "SCY", "2": "SCM", "3": "SCY", "4": "LCY", "5": "LCM"}
+# Dolphin events-CSV name maps (events2dolphin / RCSL style — verified
+# byte-for-byte against a real events2dolphin output).
+_DOLPHIN_GENDER = {"F": "GIRLS", "M": "BOYS", "X": "MIXED"}
+_DOLPHIN_INDIV_STROKE = {"A": "FREE", "B": "BACK", "C": "BREAST", "D": "FLY", "F": "IM"}
+_DOLPHIN_RELAY_STROKE = {"A": "FREE RELAY", "B": "BACK RELAY", "C": "BREAST RELAY",
+                         "D": "FLY RELAY", "E": "MEDLEY RELAY", "F": "IM RELAY"}
 
 # mdbtools `mdb-export` binary. Resolution order: env override, bundled copy,
 # then PATH (dev/CI on Linux/macOS).
@@ -255,72 +254,48 @@ def rows_to_heats(
     return out
 
 
-# ---- event list (for the Dolphin events-relay) ---------------------------
-# Hands the Dolphin software the seeded event/heat list so the operator picks
-# events instead of hand-typing. Names mirror convert.mjs's `description`; the
-# name is just an operator-facing label (NOT a parity-keyed field), so empty
-# components are dropped for readability.
+# ---- Dolphin events CSV (for the Dolphin events-relay) -------------------
+# Generates the Dolphin software's Events-import CSV straight from the MM tables,
+# so the operator never runs the .scb -> events2dolphin dance. The output is
+# verified BYTE-FOR-BYTE against a real events2dolphin file: 5 columns,
+# `event,NAME,heats,1,A`, CRLF, no header, one row per seeded Event_no.
 
-def _age_group(r: Mapping[str, Any]) -> str:
+def _dolphin_age(r: Mapping[str, Any]) -> str:
     low = _parse_int(r.get("low_age")) or 0
     high = _parse_int(r.get("high_age")) or 0
     if low == 0 and high == 0:
-        return "Open"
+        return "OPEN"
     if low == 0:
-        return f"{high} & Under"
+        return f"{high}&U"
     if high == 0:
-        return f"{low} & Over"
+        return f"{low}&O"
     return f"{low}-{high}"
 
 
-def _event_name(r: Mapping[str, Any], dist_unit: str = "") -> str:
-    def m(d: dict, key: str) -> str:
-        v = str(r.get(key, "")).strip()
-        return d.get(v, v)
-    gender = m(_GENDER_MAP, "event_gender")
+def _dolphin_event_name(r: Mapping[str, Any]) -> str:
+    gender = _DOLPHIN_GENDER.get(str(r.get("event_gender", "")).strip(), str(r.get("event_gender", "")).strip())
     distance = str(r.get("event_dist", "")).strip()
-    stroke = m(_STROKE_MAP, "event_stroke")
-    parts = [p for p in (gender, _age_group(r), distance, dist_unit, stroke) if p]
-    return " ".join(parts)
+    stroke_code = str(r.get("event_stroke", "")).strip()
+    is_relay = str(r.get("ind_rel", "")).strip().upper() == "R"
+    if is_relay:
+        stroke = _DOLPHIN_RELAY_STROKE.get(stroke_code, f"{stroke_code} RELAY")
+    else:
+        stroke = _DOLPHIN_INDIV_STROKE.get(stroke_code, stroke_code)
+    return f"{gender} {_dolphin_age(r)} {distance} {stroke}"
 
 
-def write_dolphin_events_csv(path: str | Path, events: Iterable[Mapping[str, Any]]) -> int:
-    """Write the event list as a Dolphin events CSV (``event,name,heats`` per row).
-
-    Format mirrors JohnStrunk's ``events2dolphin`` (event number, name, heat count),
-    headerless. ⚠ The exact columns/headers the installed CTS Dolphin build imports
-    are UNVERIFIED — confirm on the Dolphin PC's Events screen before relying on it.
-    """
-    p = Path(path)
-    if p.parent and not p.parent.exists():
-        p.parent.mkdir(parents=True, exist_ok=True)
-    rows = list(events)
-    with open(p, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        for e in rows:
-            w.writerow([e.get("event"), e.get("name"), e.get("heats")])
-    return len(rows)
-
-
-def build_event_list(
+def build_dolphin_events_csv(
     events: Iterable[Mapping[str, Any]],
     entries: Iterable[Mapping[str, Any]],
     relays: Iterable[Mapping[str, Any]],
-    meet: Iterable[Mapping[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
-    """MM table rows -> ``[{event, name, heats}]`` for the Dolphin events screen.
+) -> str:
+    """MM table rows -> the Dolphin Events-import CSV text (events2dolphin format).
 
-    Only events with at least one seeded heat are returned (those are the ones
-    the operator runs). ``heats`` = count of distinct heat numbers across the
-    event's entries/relays, keyed the same way as results (``Pre_heat || Fin_heat``).
+    One line per seeded event: ``Event_no,NAME,heats,1,A`` (CRLF, no header).
+    ``heats`` = distinct seeded heat numbers (``Pre_heat || Fin_heat``) for the
+    event. Cols 4/5 are constant (``1``/``A``) as events2dolphin emits them.
+    Verified identical to a real events2dolphin output for a 96-event RCSL meet.
     """
-    dist_unit = ""
-    meet_rows = list(meet or [])
-    if meet_rows:
-        course = _COURSE_MAP.get(str(_lower_keyed(meet_rows[0]).get("meet_course", "")).strip())
-        if course:
-            dist_unit = "Yard" if course.endswith("Y") else "Meter"
-
     heats_by_ptr: dict[int, set[int]] = {}
     for row in (*entries, *relays):
         r = _lower_keyed(row)
@@ -329,7 +304,7 @@ def build_event_list(
         if ptr and heat:
             heats_by_ptr.setdefault(ptr, set()).add(heat)
 
-    out: list[dict[str, Any]] = []
+    rows: list[tuple[int, str, int]] = []
     for ev in events:
         r = _lower_keyed(ev)
         ptr = _parse_int(r.get("event_ptr"))
@@ -338,10 +313,10 @@ def build_event_list(
             continue
         heat_count = len(heats_by_ptr.get(ptr, ()))
         if heat_count == 0:
-            continue  # not seeded / no entries — nothing to run
-        out.append({"event": no, "name": _event_name(r, dist_unit), "heats": heat_count})
-    out.sort(key=lambda e: e["event"])
-    return out
+            continue  # not seeded — events2dolphin only emits seeded events
+        rows.append((no, _dolphin_event_name(r), heat_count))
+    rows.sort(key=lambda t: t[0])
+    return "".join(f"{no},{name},{heats},1,A\r\n" for no, name, heats in rows)
 
 
 # ---- mdbtools (mdb-export) I/O -------------------------------------------
@@ -447,19 +422,18 @@ def read_mdb(mdb_path: str | Path, *, use_copy: bool = True) -> list[ParsedHeat]
     return rows_to_heats(events, entries, relays, athletes=athletes, source_file=src.name)
 
 
-def read_event_list_from_mdb(mdb_path: str | Path, *, use_copy: bool = True) -> list[dict[str, Any]]:
-    """Read the MM ``.mdb`` and return the seeded event list for the Dolphin relay."""
+def read_dolphin_events_csv_from_mdb(mdb_path: str | Path, *, use_copy: bool = True) -> str:
+    """Read the MM ``.mdb`` and return the Dolphin Events-import CSV text."""
     src = Path(mdb_path)
     work = copy_to_temp(src) if use_copy else src
     try:
         events = _export(work, _EVENT_TABLE)
         entries = _export(work, _ENTRY_TABLE)
         relays = _export(work, _RELAY_TABLE)
-        meet = _export(work, _MEET_TABLE)
     finally:
         if use_copy:
             try:
                 work.unlink()
             except OSError:
                 logger.debug("could not remove temp MDB copy %s", work)
-    return build_event_list(events, entries, relays, meet)
+    return build_dolphin_events_csv(events, entries, relays)

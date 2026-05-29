@@ -53,7 +53,8 @@ class AppConfig:
     poll_interval: float = 12.0  # seconds between MDB re-reads
 
     # --- Dolphin-events relay ---
-    # Where the Dolphin client writes the event-list CSV it pulls from makosmeets.
+    # Dolphin side: where to write the events CSV pulled from makosmeets.
+    # (Manager side builds it from the .mdb above — no source file to configure.)
     dolphin_events_csv: str = ""
 
     @classmethod

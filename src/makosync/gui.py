@@ -208,6 +208,7 @@ class GuiApp:
         relay.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(6, 0))
         if mode == "manager":
             ttk.Button(relay, text="Push events → Dolphin", command=self._push_events).pack(side=tk.LEFT)
+            ttk.Label(relay, text="(built from the .mdb above)", foreground="#999").pack(side=tk.LEFT, padx=6)
         else:
             ttk.Button(relay, text="Load events from MM", command=self._load_events).pack(side=tk.LEFT)
             ttk.Label(relay, text="→ CSV:").pack(side=tk.LEFT, padx=(8, 2))
@@ -366,7 +367,7 @@ class GuiApp:
                 pass
 
     def _push_events(self) -> None:
-        """Manager: read the seeded event list from the .mdb, push it to makosmeets."""
+        """Manager: build the Dolphin events CSV from the .mdb, push it to makosmeets."""
         url = self.url_var.get().strip()
         token = self.token_var.get().strip()
         mdb = self.mdb_var.get().strip()
@@ -382,10 +383,11 @@ class GuiApp:
         def work():
             try:
                 from .client import IngestClient
-                from .mdb_reader import read_event_list_from_mdb
-                events = read_event_list_from_mdb(mdb)
-                res, updated_at = IngestClient(url, token).push_dolphin_events(events)
-                out = (res, updated_at, len(events), None)
+                from .mdb_reader import read_dolphin_events_csv_from_mdb
+                csv_text = read_dolphin_events_csv_from_mdb(mdb)
+                lines = sum(1 for ln in csv_text.splitlines() if ln.strip())
+                res, updated_at = IngestClient(url, token).push_dolphin_events_csv(csv_text, name=Path(mdb).name)
+                out = (res, updated_at, lines, None)
             except Exception as e:
                 out = (None, None, 0, e)
             try:
@@ -395,7 +397,7 @@ class GuiApp:
 
         threading.Thread(target=work, name="makosync-pushev", daemon=True).start()
 
-    def _after_push(self, res, updated_at, count, err) -> None:
+    def _after_push(self, res, updated_at, lines, err) -> None:
         if not self._alive:
             return
         if err is not None:
@@ -404,7 +406,7 @@ class GuiApp:
             return
         if res and res.ok:
             self.cfg.save()
-            self._log_line(f"pushed {count} events to server (updated {updated_at or 'ok'})")
+            self._log_line(f"pushed {lines} events to server (updated {updated_at or 'ok'})")
             self._set_events_status(f"events on server: {updated_at or 'ok'}")
         else:
             s = res.status if res else "?"
@@ -412,7 +414,7 @@ class GuiApp:
             self._set_events_status(f"events on server: error {s}")
 
     def _load_events(self) -> None:
-        """Dolphin: fetch the event list from makosmeets, write the Dolphin CSV."""
+        """Dolphin: fetch the events CSV from makosmeets, write it verbatim for Dolphin."""
         url = self.url_var.get().strip()
         token = self.token_var.get().strip()
         csv_path = self.events_csv_var.get().strip()
@@ -427,13 +429,18 @@ class GuiApp:
         def work():
             try:
                 from .client import IngestClient
-                from .mdb_reader import write_dolphin_events_csv
-                res, events, updated_at = IngestClient(url, token).fetch_dolphin_events()
-                if res.ok and events:
-                    write_dolphin_events_csv(csv_path, events)
-                out = (res, events, updated_at, csv_path, None)
+                res, csv_text, name, updated_at = IngestClient(url, token).fetch_dolphin_events_csv()
+                lines = 0
+                if res.ok and csv_text:
+                    p = Path(csv_path)
+                    if p.parent and not p.parent.exists():
+                        p.parent.mkdir(parents=True, exist_ok=True)
+                    with open(p, "w", newline="", encoding="utf-8") as f:
+                        f.write(csv_text)  # verbatim — keep events2dolphin's exact bytes/CRLF
+                    lines = sum(1 for ln in csv_text.splitlines() if ln.strip())
+                out = (res, lines, updated_at, csv_path, None)
             except Exception as e:
-                out = (None, [], None, csv_path, e)
+                out = (None, 0, None, csv_path, e)
             try:
                 self.root.after(0, lambda: self._after_load(*out))
             except Exception:
@@ -441,7 +448,7 @@ class GuiApp:
 
         threading.Thread(target=work, name="makosync-loadev", daemon=True).start()
 
-    def _after_load(self, res, events, updated_at, csv_path, err) -> None:
+    def _after_load(self, res, lines, updated_at, csv_path, err) -> None:
         if not self._alive:
             return
         if err is not None:
@@ -453,13 +460,13 @@ class GuiApp:
             self._log_line(f"load events failed: {s} {res.detail if res else ''}")
             self._set_events_status(f"events on server: error {s}")
             return
-        if not events:
+        if not lines:
             self._log_line("no events on server yet — push from the Manager machine first")
             self._set_events_status("events on server: none yet")
             return
         self.cfg.dolphin_events_csv = csv_path
         self.cfg.save()
-        self._log_line(f"loaded {len(events)} events (server updated {updated_at or '?'}); wrote {csv_path}")
+        self._log_line(f"loaded {lines} events (server updated {updated_at or '?'}); wrote {csv_path}")
         self._set_events_status(f"events on server: {updated_at or 'ok'}")
 
     # ---- manual update check ------------------------------------------
