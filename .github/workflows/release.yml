@@ -28,9 +28,9 @@ jobs:
         run: |
           $v = "${{ github.ref_name }}".TrimStart('v')
           "VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          (Get-Content src/dolphinsync/__init__.py) `
+          (Get-Content src/makosync/__init__.py) `
             -replace '__version__ = ".*"', "__version__ = `"$v`"" |
-            Set-Content src/dolphinsync/__init__.py
+            Set-Content src/makosync/__init__.py
           Write-Host "Building version $v"
 
       - name: Run tests
@@ -38,6 +38,10 @@ jobs:
         run: |
           $env:PYTHONPATH = "src"
           python -m pytest tests/ -q
+
+      - name: Fetch mdbtools (Manager mode)
+        shell: pwsh
+        run: . build/fetch_mdbtools.ps1
 
       - name: Build exe
         shell: pwsh
@@ -62,12 +66,12 @@ jobs:
         run: |
           $f = "build/release_notes_${{ github.ref_name }}.md"
           if (Test-Path $f) { Copy-Item $f notes.md }
-          else { "## MakosDolphinSync ${{ github.ref_name }}" | Set-Content notes.md }
+          else { "## MakoSync ${{ github.ref_name }}" | Set-Content notes.md }
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          name: MakosDolphinSync ${{ github.ref_name }}
+          name: MakoSync ${{ github.ref_name }}
           body_path: notes.md
-          files: dist/MakosDolphinSync-Setup-*.exe
+          files: dist/MakoSync-Setup-*.exe
           fail_on_unmatched_files: true

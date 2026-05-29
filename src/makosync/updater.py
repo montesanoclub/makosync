@@ -17,9 +17,11 @@ from . import __version__
 
 logger = logging.getLogger(__name__)
 
-LATEST_RELEASE_API = "https://api.github.com/repos/montesanoclub/mm-dolphinsync/releases/latest"
-RELEASES_PAGE = "https://github.com/montesanoclub/mm-dolphinsync/releases/latest"
-USER_AGENT = f"DolphinSync/{__version__}"
+# GitHub repo the update check queries (renamed from mm-dolphinsync 2026-05-29).
+GITHUB_REPO = "montesanoclub/makosync"
+LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+RELEASES_PAGE = f"https://github.com/{GITHUB_REPO}/releases/latest"
+USER_AGENT = f"MakoSync/{__version__}"
 
 
 @dataclass

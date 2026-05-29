@@ -1,19 +1,22 @@
 [project]
-name = "dolphinsync"
-version = "0.1.2"
-description = "Sync CTS Dolphin .do3/.do4 files (parsed JSON + raw) to a web ingest endpoint."
+name = "makosync"
+version = "0.2.0"
+description = "Push live swim results to makosmeets — CTS Dolphin files (unofficial) or a Meet Manager .mdb (official)."
 requires-python = ">=3.11"
+# Stdlib-only runtime. Manager mode (Meet Manager .mdb) reads via the mdbtools
+# `mdb-export` binary, which is bundled into the .exe at build time (not a pip
+# dependency) — see build/fetch_mdbtools.ps1 and build/build_exe.ps1.
 dependencies = []
 
 [project.scripts]
-dolphinsync = "dolphinsync.__main__:main"
+makosync = "makosync.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/dolphinsync"]
+packages = ["src/makosync"]
 
 [dependency-groups]
 dev = ["pytest>=8", "pyinstaller>=6"]

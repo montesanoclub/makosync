@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from dolphinsync.client import IngestResult
-from dolphinsync import watcher as watcher_mod
-from dolphinsync.watcher import Watcher, WatcherConfig
+from makosync.client import IngestResult
+from makosync import watcher as watcher_mod
+from makosync.watcher import Watcher, WatcherConfig
 
 DO4_BODY = (
     ";1;1;All\n"
@@ -34,7 +34,7 @@ class FakeClient:
         self._results = results
         self.calls = 0
 
-    def send_heat(self, heat, tier: str = "unofficial") -> IngestResult:
+    def send_heat(self, heat, tier: str = "unofficial", source: str = "dolphin") -> IngestResult:
         self.calls += 1
         idx = min(self.calls - 1, len(self._results) - 1)
         return self._results[idx]

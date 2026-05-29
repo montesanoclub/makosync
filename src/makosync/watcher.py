@@ -103,11 +103,11 @@ class Watcher:
         else:
             self._log(f"watching {self.cfg.folder} — will replay existing files")
 
-        self._main_thread = threading.Thread(target=self._main_loop, name="dolphinsync-poll", daemon=True)
+        self._main_thread = threading.Thread(target=self._main_loop, name="makosync-poll", daemon=True)
         self._main_thread.start()
 
         if self.cfg.upload_raw:
-            self._raw_thread = threading.Thread(target=self._raw_loop, name="dolphinsync-raw", daemon=True)
+            self._raw_thread = threading.Thread(target=self._raw_loop, name="makosync-raw", daemon=True)
             self._raw_thread.start()
 
     def stop(self) -> None:

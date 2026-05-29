@@ -17,9 +17,9 @@ from typing import Any
 
 import pytest
 
-from dolphinsync.client import IngestClient
-from dolphinsync.parser import parse_file
-from dolphinsync.watcher import Watcher, WatcherConfig
+from makosync.client import IngestClient
+from makosync.parser import parse_file
+from makosync.watcher import Watcher, WatcherConfig
 
 SAMPLES = Path(__file__).parent.parent / "samples"
 TOKEN = "test-token-xyz"

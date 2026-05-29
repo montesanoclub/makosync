@@ -53,11 +53,12 @@ class LaneTime:
     time: str | None            # "SS.ss" / "M:SS.ss", or None if no time
     timers: list[float] = field(default_factory=list)  # raw button timers (debug/audit)
     dq: bool = False
+    place: int | None = None    # official finish place (Meet Manager only); None for Dolphin
 
 
 @dataclass
 class ParsedHeat:
-    format: str                 # "do3" | "do4" | "csv"
+    format: str                 # "do3" | "do4" | "csv" | "mm"
     dataset: str
     event: int
     heat: int

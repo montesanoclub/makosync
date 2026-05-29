@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from dolphinsync import updater
+from makosync import updater
 
 
 class _FakeResp:

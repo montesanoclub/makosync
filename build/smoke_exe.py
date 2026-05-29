@@ -17,9 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-EXE = REPO / "dist" / "MakosDolphinSync.exe"
+EXE = REPO / "dist" / "MakoSync.exe"
 SAMPLE = REPO / "samples" / "004-000-001A-0001.do4"
-# Must match dolphinsync.client.HEAT_PATH / FILE_PATH.
+# Must match makosync.client.HEAT_PATH / FILE_PATH.
 HEAT_PATH = "/api/live-results/ingest/"
 FILE_PATH = "/api/live-results/ingest/file/"
 

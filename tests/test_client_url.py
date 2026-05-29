@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from dolphinsync.client import HEAT_PATH, IngestClient, normalize_base_url
+from makosync.client import HEAT_PATH, IngestClient, normalize_base_url
 
 BASE = "https://makosmeets.com"
 

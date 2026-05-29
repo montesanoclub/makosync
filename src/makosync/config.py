@@ -1,4 +1,4 @@
-"""Config persistence — load/save to %APPDATA%\\MakosDolphinSync\\config.json."""
+"""Config persistence — load/save to %APPDATA%\\MakoSync\\config.json."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-APP_DIR_NAME = "MakosDolphinSync"
+APP_DIR_NAME = "MakoSync"
 CONFIG_FILE = "config.json"
 
 
@@ -33,13 +33,28 @@ def config_path() -> Path:
 
 @dataclass
 class AppConfig:
-    folder: str = ""
+    # Which producer mode the launcher last ran. "dolphin" watches a CTS
+    # Dolphin folder (unofficial times); "manager" reads the Hy-Tek Meet Manager
+    # .mdb (official results). URL + token below are shared across both modes.
+    mode: str = "dolphin"
+
     base_url: str = ""
     token: str = ""
+
+    # --- Dolphin mode ---
+    folder: str = ""
     include_csv: bool = False
     upload_raw: bool = True  # also archive the raw .do to R2 (forensic copy)
     replay_existing: bool = False
     tier: str = "unofficial"
+
+    # --- Meet Manager mode ---
+    mdb_path: str = ""        # path to the live Hy-Tek MM .mdb on the scoring PC
+    poll_interval: float = 12.0  # seconds between MDB re-reads
+
+    # --- Dolphin-events relay ---
+    # Where the Dolphin client writes the event-list CSV it pulls from makosmeets.
+    dolphin_events_csv: str = ""
 
     @classmethod
     def load(cls) -> "AppConfig":

@@ -3,7 +3,13 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+build/MakoSync/
 build/MakosDolphinSync/
+# mdbtools binaries are built at build time (build/fetch_mdbtools.ps1), not committed.
+src/makosync/tools/*
+!src/makosync/tools/README.md
+# transient build log from build/build_mdbtools.sh
+_mdbbuild.log
 dist/
 *.spec
 *.exe

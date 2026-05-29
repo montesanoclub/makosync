@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from dolphinsync.parser import (
+from makosync.parser import (
     _final_from_timers, _to_secs, format_seconds,
     parse_csv_text, parse_do3_text, parse_do4_text, parse_file,
 )
