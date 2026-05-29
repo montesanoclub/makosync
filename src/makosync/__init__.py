@@ -8,4 +8,4 @@ Two modes share one app and one ingest client:
     the reconciled *official* results (places, DQs, backup-watch times).
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
