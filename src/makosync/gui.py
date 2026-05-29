@@ -65,6 +65,7 @@ class GuiApp:
         self.log_q: "queue.Queue[str]" = queue.Queue()
         self._alive = True
         self._icon_img: tk.PhotoImage | None = None  # keep a ref so Tk doesn't GC it
+        self._persist_after_id = None  # debounced settings-autosave handle
 
         self._set_window_icon()
         self.container = ttk.Frame(self.root)
@@ -243,10 +244,19 @@ class GuiApp:
         frm.columnconfigure(1, weight=1)
         frm.rowconfigure(row, weight=1)
 
+        # Autosave fields on edit (debounced) so a close/kill never loses
+        # URL/token/paths — config is re-read into the fields on next launch.
+        for _name in ("url_var", "token_var", "folder_var", "mdb_var", "poll_var",
+                      "events_csv_var", "csv_var", "raw_var", "replay_var"):
+            _v = getattr(self, _name, None)
+            if _v is not None:
+                _v.trace_add("write", self._schedule_persist)
+
     def _back_to_launcher(self) -> None:
         if self.watcher and self.watcher.is_running():
             messagebox.showinfo("Running", "Stop the current sync before switching modes.")
             return
+        self._persist()  # keep this view's fields before leaving it
         self.watcher = None
         self._show_launcher()
 
@@ -547,8 +557,54 @@ class GuiApp:
             if self._alive:
                 self.root.after(1000, self._refresh_status)
 
+    # ---- settings autosave -------------------------------------------
+
+    def _schedule_persist(self, *_) -> None:
+        """Debounce field autosave: write config ~1s after the last edit."""
+        if self._persist_after_id:
+            try:
+                self.root.after_cancel(self._persist_after_id)
+            except Exception:
+                pass
+        try:
+            self._persist_after_id = self.root.after(1000, self._persist)
+        except Exception:
+            self._persist_after_id = None
+
+    def _persist(self) -> None:
+        """Capture the currently-shown fields into config and save to disk."""
+        self._persist_after_id = None
+        try:
+            if self.mode:
+                self.cfg.mode = self.mode
+            if hasattr(self, "url_var"):
+                self.cfg.base_url = self.url_var.get().strip()
+            if hasattr(self, "token_var"):
+                self.cfg.token = self.token_var.get().strip()
+            if hasattr(self, "folder_var"):
+                self.cfg.folder = self.folder_var.get().strip()
+            if hasattr(self, "mdb_var"):
+                self.cfg.mdb_path = self.mdb_var.get().strip()
+            if hasattr(self, "csv_var"):
+                self.cfg.include_csv = bool(self.csv_var.get())
+            if hasattr(self, "raw_var"):
+                self.cfg.upload_raw = bool(self.raw_var.get())
+            if hasattr(self, "replay_var"):
+                self.cfg.replay_existing = bool(self.replay_var.get())
+            if hasattr(self, "events_csv_var"):
+                self.cfg.dolphin_events_csv = self.events_csv_var.get().strip()
+            if hasattr(self, "poll_var"):
+                try:
+                    self.cfg.poll_interval = max(3.0, float(self.poll_var.get()))
+                except (ValueError, tk.TclError):
+                    pass
+            self.cfg.save()
+        except Exception:
+            logger.exception("settings autosave failed")
+
     def _on_close(self) -> None:
         self._alive = False
+        self._persist()  # save whatever's in the fields on a clean close
         if self.watcher:
             self.watcher.stop()
         self.root.destroy()
