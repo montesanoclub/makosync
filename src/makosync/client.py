@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib import error, request
+from urllib.parse import quote
 
 from . import __version__
 from .parser import ParsedHeat
@@ -43,6 +44,8 @@ FILE_PATH = "/api/live-results/ingest/file/"
 # Transient per-meet relay so the Manager machine can hand the seeded event list
 # to the Dolphin machine (both talk outbound to makosmeets — no LAN/firewall).
 DOLPHIN_EVENTS_PATH = "/api/live-results/dolphin-events/"
+# Meet Manager import relay: list do3s ready to import (GET), download via FILE_PATH?key=.
+PENDING_PATH = "/api/live-results/pending/"
 
 
 def normalize_base_url(raw: str) -> str:
@@ -171,6 +174,42 @@ class IngestClient:
         csv_text = data.get("csv")
         name = data.get("name")
         return res, (csv_text if isinstance(csv_text, str) else ""), (name if isinstance(name, str) else ""), _updated_at_from(res.body)
+
+    # ---- Meet Manager import relay (receiver pulls do3) ----------------
+
+    def fetch_pending(self) -> tuple[IngestResult, list[dict]]:
+        """List Dolphin .do3 files ready to import into Meet Manager.
+
+        Each entry: {race_id, meet_id, event, heat, src_name, out_name, key}.
+        Returns (result, files); files is [] on any error.
+        """
+        res = self._send_with_retry(
+            f"{self.base_url}{PENDING_PATH}", None,
+            headers={"Accept": "application/json"}, method="GET",
+        )
+        if not res.ok:
+            return res, []
+        try:
+            data = json.loads(res.body) if res.body else {}
+        except ValueError:
+            return IngestResult(ok=False, status=res.status, detail="invalid JSON from server"), []
+        files = data.get("files") if isinstance(data, dict) else None
+        return res, (files if isinstance(files, list) else [])
+
+    def download_file(self, key: str) -> tuple[IngestResult, bytes]:
+        """Download a raw Dolphin file's bytes by R2 key — no decode (binary-safe)."""
+        url = f"{self.base_url}{FILE_PATH}?key={quote(key, safe='')}"
+        headers = {"User-Agent": USER_AGENT}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        try:
+            req = request.Request(url, headers=headers, method="GET")
+            with request.urlopen(req, timeout=self.timeout) as resp:
+                return IngestResult(ok=True, status=resp.status, detail="ok"), resp.read()
+        except error.HTTPError as e:
+            return IngestResult(ok=False, status=e.code, detail=_read_err(e)), b""
+        except (error.URLError, TimeoutError, OSError) as e:
+            return IngestResult(ok=False, status=0, detail=str(e)), b""
 
     # ---- internals ----------------------------------------------------
 
