@@ -90,6 +90,8 @@ def _lane_to_dict(ln: Any) -> dict[str, Any]:
     d: dict[str, Any] = {"lane": ln.lane, "time": ln.time, "timers": list(ln.timers), "dq": ln.dq}
     if getattr(ln, "place", None) is not None:
         d["place"] = ln.place
+    if getattr(ln, "dq_code", ""):
+        d["dq_code"] = ln.dq_code
     return d
 
 

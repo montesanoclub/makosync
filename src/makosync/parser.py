@@ -54,6 +54,7 @@ class LaneTime:
     timers: list[float] = field(default_factory=list)  # raw button timers (debug/audit)
     dq: bool = False
     place: int | None = None    # official finish place (Meet Manager only); None for Dolphin
+    dq_code: str = ""           # raw Hy-Tek Fin_dqcode (Meet Manager only); often empty
 
 
 @dataclass

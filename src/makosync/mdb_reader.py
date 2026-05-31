@@ -225,12 +225,18 @@ def rows_to_heats(
             # No assigned lane to overlay onto — skip (server requires lane >= 0
             # but a baked lane is always 1..N; lane 0 means unseeded).
             return
+        # DQ is keyed off Fin_stat == 'Q' (validated against 4 real RCSL 2025
+        # meets, both Entry and Relay). NOT Fin_dqcode — that's the infraction
+        # code and is frequently empty even on a real DQ (operator-dependent).
+        dq = (str(r.get("fin_stat") or "").strip().upper() == "Q")
+        dq_code = str(r.get("fin_dqcode") or "").strip()
         time = result_time(r.get("fin_time"))
-        if time is None:
+        if time is None and not dq:
             return  # seeded but no result yet — nothing to publish
+        # A DQ has Fin_place == 0 → place stays None (DQ never carries a place).
         place = _parse_int(r.get("fin_place")) or None
         heats.setdefault((event_no, heat), {})[lane] = LaneTime(
-            lane=lane, time=time, place=place,
+            lane=lane, time=time, place=place, dq=dq, dq_code=dq_code,
         )
 
     for row in entries:
