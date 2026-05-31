@@ -17,7 +17,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-EXE = REPO / "dist" / "MakoSync.exe"
+# --onedir puts the exe in dist\MakoSync\; fall back to the old --onefile path.
+EXE = REPO / "dist" / "MakoSync" / "MakoSync.exe"
+if not EXE.exists():
+    EXE = REPO / "dist" / "MakoSync.exe"
 SAMPLE = REPO / "samples" / "004-000-001A-0001.do4"
 # Must match makosync.client.HEAT_PATH / FILE_PATH.
 HEAT_PATH = "/api/live-results/ingest/"
