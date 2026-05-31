@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 APP_DIR_NAME = "MakoSync"
 CONFIG_FILE = "config.json"
 
+# Prebaked so a fresh meet-PC install is ready to go without the volunteer typing
+# anything — point at the makosmeets ingest endpoint with the shared dolphin
+# token. Both are overridable in the GUI (and autosaved) if a meet needs different.
+DEFAULT_BASE_URL = "https://www.makosmeets.com/"
+DEFAULT_TOKEN = "dev-dolphin-token"
+
 
 def app_dir() -> Path:
     base = os.environ.get("APPDATA") or os.path.expanduser("~/.config")
@@ -40,8 +46,8 @@ class AppConfig:
     # (The old standalone "mm-import" mode folded into "manager"; load() migrates it.)
     mode: str = "dolphin"
 
-    base_url: str = ""
-    token: str = ""
+    base_url: str = DEFAULT_BASE_URL
+    token: str = DEFAULT_TOKEN
 
     # --- Dolphin mode ---
     folder: str = ""
@@ -77,6 +83,12 @@ class AppConfig:
         try:
             data: dict[str, Any] = json.loads(p.read_text(encoding="utf-8"))
             cfg = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+            # Backfill the prebaked endpoint if an older config saved them blank,
+            # so the makosmeets URL/token are always pre-filled unless overridden.
+            if not cfg.base_url:
+                cfg.base_url = DEFAULT_BASE_URL
+            if not cfg.token:
+                cfg.token = DEFAULT_TOKEN
             if cfg.mode == "mm-import":  # standalone MM Import merged into Manager
                 logger.info("migrating saved mode 'mm-import' -> 'manager'")
                 cfg.mode = "manager"

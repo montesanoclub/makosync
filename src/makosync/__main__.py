@@ -18,6 +18,7 @@ import sys
 import time
 from pathlib import Path
 
+from .config import DEFAULT_BASE_URL, DEFAULT_TOKEN
 from .watcher import Watcher, WatcherConfig
 
 
@@ -38,8 +39,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--mode", default="dolphin", choices=["dolphin", "manager", "mm-import"],
                     help="'dolphin' (folder watch), 'manager' (Meet Manager PC: pull .do3 + "
                          "push official .mdb results), or 'mm-import' (pull-only).")
-    ap.add_argument("--url", help="Base URL of the ingest server, e.g. http://localhost:8080")
-    ap.add_argument("--token", default="", help="Optional bearer token; omitted if blank.")
+    ap.add_argument("--url", default=DEFAULT_BASE_URL,
+                    help=f"Base URL of the ingest server (default: {DEFAULT_BASE_URL}).")
+    ap.add_argument("--token", default=DEFAULT_TOKEN,
+                    help="Bearer token (default: the prebaked dolphin token; pass --token '' to omit).")
     ap.add_argument("--once", action="store_true",
                     help="Run one pass/cycle and exit (handy for smoke tests).")
 
