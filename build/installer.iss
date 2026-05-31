@@ -33,6 +33,11 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\src\makosync\assets\mako.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; In-app self-update: close the running MakoSync so its .exe can be replaced.
+; We relaunch it ourselves via the WizardSilent [Run] entry, so don't let Inno
+; also restart it (that would double-launch).
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -51,4 +56,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
 
 [Run]
+; Interactive install: offer the usual "Launch MakoSync" checkbox.
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; Silent install (in-app self-update): relaunch automatically.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent

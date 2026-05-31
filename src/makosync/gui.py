@@ -15,8 +15,11 @@ tkinter ships with Windows Python — no extra install needed for the .exe.
 from __future__ import annotations
 
 import logging
+import os
 import queue
+import subprocess
 import sys
+import tempfile
 import threading
 import tkinter as tk
 import webbrowser
@@ -67,6 +70,7 @@ class GuiApp:
         self._alive = True
         self._icon_img: tk.PhotoImage | None = None  # keep a ref so Tk doesn't GC it
         self._persist_after_id = None  # debounced settings-autosave handle
+        self._update_info = None  # latest UpdateInfo, once the startup check finds one
 
         self._set_window_icon()
         self.container = ttk.Frame(self.root)
@@ -541,12 +545,8 @@ class GuiApp:
     def _maybe_prompt_update(self, info) -> None:
         if not self._alive or not info.available:
             return
-        if messagebox.askyesno(
-            "Update available",
-            f"MakoSync {info.latest} is available.\nYou have {info.current}.\n\n"
-            f"Open the download page?",
-        ):
-            webbrowser.open(info.release_url)
+        self._update_info = info
+        self._do_self_update(info)  # confirms, then downloads + installs + restarts
 
     def _check_updates(self) -> None:
         """Manual only — runs the GitHub check off the UI thread, shows result."""
@@ -578,16 +578,93 @@ class GuiApp:
             )
             return
         if info.available:
-            if messagebox.askyesno(
-                "Update available",
-                f"Version {info.latest} is available.\n"
-                f"You have {info.current}.\n\nOpen the download page?",
-            ):
-                webbrowser.open(info.release_url)
+            self._update_info = info
+            self._do_self_update(info)  # confirms, then downloads + installs + restarts
         else:
             messagebox.showinfo(
                 "Up to date", f"You have the latest version ({info.current})."
             )
+
+    # ---- self-update (download installer, install, restart) -----------
+
+    def _do_self_update(self, info=None) -> None:
+        """Download the installer and launch it to update + restart (idle only)."""
+        info = info or self._update_info
+        if not info or not info.available:
+            return
+        if self.watcher and self.watcher.is_running():
+            messagebox.showinfo("Sync running", "Stop the current sync before updating.")
+            return
+        if not info.asset_url:  # no installer asset — fall back to the download page
+            if messagebox.askyesno("Update available",
+                    f"Version {info.latest} is available.\nOpen the download page?"):
+                webbrowser.open(info.release_url)
+            return
+        if not messagebox.askyesno("Update MakoSync",
+                f"Download and install v{info.latest}?\nMakoSync will close and restart."):
+            return
+        self._persist()  # keep settings before the restart
+        self._set_update_busy("Downloading…")
+
+        def work():
+            try:
+                from . import updater
+                dest = Path(tempfile.gettempdir()) / (info.asset_name or "MakoSync-Setup.exe")
+                updater.download(info.asset_url, dest, progress=self._download_progress)
+                out = (str(dest), None)
+            except Exception as e:  # noqa: BLE001 — surfaced to the user below
+                out = (None, e)
+            try:
+                self.root.after(0, lambda: self._after_download(*out))
+            except Exception:
+                pass
+
+        threading.Thread(target=work, name="makosync-update", daemon=True).start()
+
+    def _set_update_busy(self, text: str) -> None:
+        btn = getattr(self, "update_btn", None)
+        if btn:
+            try:
+                btn.configure(state=tk.DISABLED, text=text)
+            except Exception:
+                pass
+
+    def _restore_update_btn(self) -> None:
+        btn = getattr(self, "update_btn", None)
+        if btn:
+            try:
+                btn.configure(state=tk.NORMAL, text="Check for updates")
+            except Exception:
+                pass
+
+    def _download_progress(self, done: int, total: int) -> None:
+        pct = f"{done * 100 // total}%" if total else f"{done // 1024}KB"
+        try:
+            self.root.after(0, lambda: self._set_update_busy(f"Downloading… {pct}"))
+        except Exception:
+            pass
+
+    def _after_download(self, path, err) -> None:
+        if not self._alive:
+            return
+        if err is not None or not path:
+            self._log_line(f"update download failed: {err}")
+            self._restore_update_btn()
+            messagebox.showwarning("Update failed", f"Couldn't download the installer.\n\n{err}")
+            return
+        self._log_line("downloaded installer; launching to install + restart…")
+        try:
+            flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
+            subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES"],
+                             creationflags=flags, close_fds=True)
+        except Exception as e:  # noqa: BLE001 — surfaced to the user below
+            self._log_line(f"could not launch installer: {e}")
+            self._restore_update_btn()
+            messagebox.showwarning("Update failed", f"Couldn't launch the installer.\n\n{e}")
+            return
+        # Exit so the installer can replace this exe; CloseApplications + the
+        # silent-relaunch [Run] entry bring MakoSync back up on the new version.
+        self.root.after(700, self._on_close)
 
     # ---- polling for log + status -------------------------------------
 
