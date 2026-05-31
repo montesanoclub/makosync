@@ -5,6 +5,11 @@ See `~/.claude/CLAUDE.md` for global rules and the ship-verb canon in
 `montesanoclub/makosync` (a shared remote) and is the meet-PC companion to
 makosmeets. This file is MakoSync-specific.
 
+> **SHARED REPO — hard rule (Kyle, 2026-05-31):** makosync AND makosmeets are
+> shared with a human collaborator (Dan Paulson). **ALWAYS `git pull` before
+> working; NEVER push without Kyle's explicit, per-change OK** — a push lands in
+> front of Dan. Commit locally freely. See `claude-config/memory/shared-repos.md`.
+
 ## What it is
 
 A Windows desktop companion app for swim-meet operators. Two modes — Dolphin and
