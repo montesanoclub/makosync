@@ -59,6 +59,23 @@ Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: au
 
 [Run]
 ; Interactive install: offer the usual "Launch MakoSync" checkbox. (Silent installs
-; are driven by the self-update helper, which relaunches MakoSync itself — so no
+; are driven by the self-update helper, which relaunches MakoSync itself, so no
 ; WizardSilent [Run] here, or we'd double-launch.)
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  // A running MakoSync.exe locks its own file, and Restart Manager can't reliably
+  // close our tkinter window (it threw "couldn't close applications" + "DeleteFile
+  // failed; Access is denied"). So close it ourselves before copying files: a
+  // graceful WM_CLOSE first (lets it save settings + stop cleanly), then a hard
+  // kill as a backstop. Harmless during a self-update, where it has already exited.
+  Exec('taskkill.exe', '/IM MakoSync.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(1500);
+  Exec('taskkill.exe', '/F /IM MakoSync.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(500);
+  Result := '';
+end;

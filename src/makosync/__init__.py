@@ -10,4 +10,4 @@ Two modes share one app and one ingest client:
     *official* results (places, DQs) — each on its own poll cadence.
 """
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
