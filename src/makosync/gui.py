@@ -1,10 +1,12 @@
 """tkinter GUI for the meet-PC volunteer.
 
-Startup shows a **mode picker** — the operator clicks **Dolphin** or **Meet
-Manager**. Each mode opens its own little form:
+Startup shows a **mode picker** — the operator clicks **Dolphin** or **Manager**.
+Each mode opens its own little form:
 
   * Dolphin — Dolphin output folder + options; pushes unofficial times.
-  * Meet Manager — the MM ``.mdb`` path + poll interval; pushes official results.
+  * Manager — runs on the Meet Manager PC and does both jobs at once: pulls the
+    relayed Dolphin ``.do3`` into MM's import folder (fast) *and* reads the MM
+    ``.mdb`` to push official results (gentler). Each has its own poll interval.
 
 Both share the makosmeets URL + token, a Start/Stop button, a status dot, live
 counters, and a scrolling log. Settings persist on Start.
@@ -35,11 +37,10 @@ logger = logging.getLogger(__name__)
 
 MAX_LOG_LINES = 2000  # cap the log widget so a long meet can't grow it unbounded
 
-MODE_LABELS = {"dolphin": "Dolphin", "manager": "Manager", "mm-import": "MM Import"}
+MODE_LABELS = {"dolphin": "Dolphin", "manager": "Manager"}
 MODE_BLURB = {
     "dolphin": "Watch a CTS Dolphin folder · unofficial times",
-    "manager": "Hy-Tek Meet Manager database · official results",
-    "mm-import": "Pull Dolphin .do3 into Meet Manager · toast per heat",
+    "manager": "Meet Manager PC · pull Dolphin times in + push official results",
 }
 
 
@@ -112,7 +113,15 @@ class GuiApp:
             child.destroy()
         # Drop per-view widget refs so _log_line / _refresh_status know the
         # widgets are gone while we're between views (or on the launcher).
-        for attr in ("log_widget", "status_canvas", "counters_label", "status_label", "events_status"):
+        widget_attrs = ("log_widget", "status_canvas", "counters_label", "status_label", "events_status")
+        # Also drop the mode's data-bound vars. Dropping the last Python ref lets
+        # Tk unset the Tcl variable and clear its trace — otherwise a stale var
+        # from the previous mode keeps a live autosave trace and could overwrite
+        # config with old values (and traces would pile up each mode switch).
+        var_attrs = ("url_var", "token_var", "folder_var", "mdb_var", "import_dir_var",
+                     "csv_var", "raw_var", "replay_var", "poll_var", "import_poll_var",
+                     "import_notify_var", "events_csv_var")
+        for attr in widget_attrs + var_attrs:
             if hasattr(self, attr):
                 delattr(self, attr)
 
@@ -138,7 +147,7 @@ class GuiApp:
         style = ttk.Style()
         style.configure("Mode.TButton", font=("Segoe UI", 13, "bold"), padding=(24, 16))
 
-        for col, mode in enumerate(("dolphin", "manager", "mm-import")):
+        for col, mode in enumerate(("dolphin", "manager")):
             cell = ttk.Frame(btns)
             cell.grid(row=0, column=col, padx=12)
             ttk.Button(cell, text=MODE_LABELS[mode], style="Mode.TButton", width=14,
@@ -175,16 +184,16 @@ class GuiApp:
             self.folder_var = tk.StringVar(value=self.cfg.folder)
             ttk.Entry(frm, textvariable=self.folder_var).grid(row=row, column=1, sticky="ew", padx=4)
             ttk.Button(frm, text="Browse…", command=self._browse_folder).grid(row=row, column=2)
-        elif mode == "manager":
+        else:  # manager — reads the .mdb (official results) AND drops pulled .do3
             ttk.Label(frm, text="Meet Manager .mdb").grid(row=row, column=0, sticky="w")
             self.mdb_var = tk.StringVar(value=self.cfg.mdb_path)
             ttk.Entry(frm, textvariable=self.mdb_var).grid(row=row, column=1, sticky="ew", padx=4)
             ttk.Button(frm, text="Browse…", command=self._browse_mdb).grid(row=row, column=2)
-        else:  # mm-import
-            ttk.Label(frm, text="MM import folder").grid(row=row, column=0, sticky="w")
-            # Default to the folder the Meet Manager .mdb lives in — that's the
-            # folder MM's Get-Times picker already points at, so the operator
-            # doesn't pick a second path.
+            row += 1
+            ttk.Label(frm, text="Import folder").grid(row=row, column=0, sticky="w")
+            # Default to the folder the .mdb lives in — that's the folder MM's
+            # Get-Times picker already points at, so the operator doesn't pick a
+            # second path. (Blank is fine; on Start we fall back to the .mdb's parent.)
             default_dir = self.cfg.import_dir
             if not default_dir and self.cfg.mdb_path:
                 default_dir = str(Path(self.cfg.mdb_path).parent)
@@ -215,21 +224,20 @@ class GuiApp:
             ttk.Checkbutton(opt_frm, text="Also watch .csv", variable=self.csv_var).pack(side=tk.LEFT, padx=2)
             ttk.Checkbutton(opt_frm, text="Upload raw files", variable=self.raw_var).pack(side=tk.LEFT, padx=8)
             ttk.Checkbutton(opt_frm, text="Replay existing on start", variable=self.replay_var).pack(side=tk.LEFT, padx=2)
-        elif mode == "manager":
-            ttk.Label(opt_frm, text="Poll every").pack(side=tk.LEFT, padx=(2, 4))
-            self.poll_var = tk.StringVar(value=f"{self.cfg.poll_interval:g}")
-            ttk.Spinbox(opt_frm, from_=3, to=120, increment=1, width=5, textvariable=self.poll_var).pack(side=tk.LEFT)
-            ttk.Label(opt_frm, text="seconds  ·  pushes official results (places, DQs)").pack(side=tk.LEFT, padx=4)
-        else:  # mm-import
-            ttk.Label(opt_frm, text="Poll every").pack(side=tk.LEFT, padx=(2, 4))
+        else:  # manager — two independent cadences (fast pull, gentler .mdb read) + toast
+            ttk.Label(opt_frm, text="Pull .do3 every").pack(side=tk.LEFT, padx=(2, 4))
             self.import_poll_var = tk.StringVar(value=f"{self.cfg.import_poll:g}")
-            ttk.Spinbox(opt_frm, from_=1, to=30, increment=1, width=5, textvariable=self.import_poll_var).pack(side=tk.LEFT)
-            ttk.Label(opt_frm, text="seconds").pack(side=tk.LEFT, padx=(4, 8))
+            ttk.Spinbox(opt_frm, from_=1, to=30, increment=1, width=4, textvariable=self.import_poll_var).pack(side=tk.LEFT)
+            ttk.Label(opt_frm, text="s").pack(side=tk.LEFT, padx=(2, 12))
+            ttk.Label(opt_frm, text="Read .mdb every").pack(side=tk.LEFT, padx=(0, 4))
+            self.poll_var = tk.StringVar(value=f"{self.cfg.poll_interval:g}")
+            ttk.Spinbox(opt_frm, from_=3, to=120, increment=1, width=4, textvariable=self.poll_var).pack(side=tk.LEFT)
+            ttk.Label(opt_frm, text="s").pack(side=tk.LEFT, padx=(2, 12))
             self.import_notify_var = tk.BooleanVar(value=self.cfg.import_notify)
             ttk.Checkbutton(opt_frm, text="Toast on new heat", variable=self.import_notify_var).pack(side=tk.LEFT)
 
-        # Dolphin-events relay: Manager pushes the seeded event list; Dolphin loads
-        # it. mm-import has no events relay, so the row is skipped there.
+        # Dolphin-events relay: Manager pushes the seeded event list (built from
+        # the .mdb); Dolphin loads it and writes the CSV. Both modes show the row.
         if mode in ("dolphin", "manager"):
             row += 1
             relay = ttk.Frame(frm)
@@ -305,6 +313,11 @@ class GuiApp:
         )
         if f:
             self.mdb_var.set(f)
+            # First time choosing the .mdb: default the import drop folder to its
+            # parent (MM's Get-Times folder) if the operator hasn't set one.
+            idv = getattr(self, "import_dir_var", None)
+            if idv is not None and not idv.get().strip():
+                idv.set(str(Path(f).parent))
 
     def _browse_import_dir(self) -> None:
         d = filedialog.askdirectory(initialdir=self.import_dir_var.get() or "C:/")
@@ -332,9 +345,7 @@ class GuiApp:
         self.cfg.token = token
 
         if self.mode == "manager":
-            watcher = self._make_mm_watcher(url, token)
-        elif self.mode == "mm-import":
-            watcher = self._make_mm_import_watcher(url, token)
+            watcher = self._make_manager_watcher(url, token)
         else:
             watcher = self._make_dolphin_watcher(url, token)
         if watcher is None:
@@ -366,8 +377,9 @@ class GuiApp:
         )
         return Watcher(wcfg, on_event=self.log_q.put)
 
-    def _make_mm_watcher(self, url: str, token: str):
-        from .mm_watcher import MmWatcher, MmWatcherConfig
+    def _make_manager_watcher(self, url: str, token: str):
+        """Manager: pull Dolphin .do3 into MM's folder *and* push official .mdb results."""
+        from .manager_watcher import ManagerWatcher, ManagerWatcherConfig
 
         mdb = self.mdb_var.get().strip()
         if not mdb:
@@ -380,30 +392,23 @@ class GuiApp:
             poll = max(3.0, float(self.poll_var.get()))
         except ValueError:
             poll = 12.0
+        try:
+            ipoll = max(1.0, float(self.import_poll_var.get()))
+        except ValueError:
+            ipoll = 2.0
+        # Blank import folder → drop pulled .do3 next to the .mdb (MM's Get-Times folder).
+        import_dir = self.import_dir_var.get().strip() or str(Path(mdb).parent)
         self.cfg.mdb_path = mdb
         self.cfg.poll_interval = poll
-        mcfg = MmWatcherConfig(mdb_path=Path(mdb), base_url=url, token=token, poll_interval=poll)
-        return MmWatcher(mcfg, on_event=self.log_q.put)
-
-    def _make_mm_import_watcher(self, url: str, token: str):
-        from .mm_import import MmImportConfig, MmImportWatcher
-
-        folder = self.import_dir_var.get().strip()
-        if not folder:
-            self._log_line("ERROR: Meet Manager import folder is required")
-            return None
-        try:
-            poll = max(1.0, float(self.import_poll_var.get()))
-        except ValueError:
-            poll = 2.0
-        self.cfg.import_dir = folder
-        self.cfg.import_poll = poll
+        self.cfg.import_dir = import_dir
+        self.cfg.import_poll = ipoll
         self.cfg.import_notify = bool(self.import_notify_var.get())
-        mcfg = MmImportConfig(
-            base_url=url, import_dir=Path(folder), token=token,
-            poll_interval=poll, notify=self.cfg.import_notify,
+        mcfg = ManagerWatcherConfig(
+            mdb_path=Path(mdb), base_url=url, token=token,
+            poll_interval=poll, import_dir=Path(import_dir), import_poll=ipoll,
+            notify=self.cfg.import_notify,
         )
-        return MmImportWatcher(mcfg, on_event=self.log_q.put)
+        return ManagerWatcher(mcfg, on_event=self.log_q.put)
 
     # ---- dolphin-events relay -----------------------------------------
 
@@ -707,9 +712,7 @@ class GuiApp:
                 else:
                     color, label = "#2ca02c", "running"
                 if self.mode == "manager":
-                    self.counters_label.configure(text=f"sent: {s.sent_heat} official · {s.errors} errors")
-                elif self.mode == "mm-import":
-                    self.counters_label.configure(text=f"pulled: {s.sent_file} · {s.errors} errors")
+                    self.counters_label.configure(text=f"pulled: {s.sent_file} · official: {s.sent_heat} · {s.errors} errors")
                 else:
                     self.counters_label.configure(text=f"sent: {s.sent_heat} heat · {s.sent_file} raw · {s.errors} errors")
             self.status_canvas.itemconfigure(self.status_dot, fill=color)

@@ -1,10 +1,12 @@
 """Entry point for `makosync` — GUI by default, --headless for CLI.
 
-Three modes (``--mode``):
+Modes (``--mode``):
   * ``dolphin`` (default) — watch a CTS Dolphin folder, push unofficial times.
-  * ``manager`` — read the Hy-Tek Meet Manager ``.mdb`` and push official results.
-  * ``mm-import`` — pull relayed Dolphin ``.do3`` files (renamed with event/heat)
-    into the folder Meet Manager imports from; toast on each new heat.
+  * ``manager`` — the Meet Manager PC's combined mode: pull relayed Dolphin
+    ``.do3`` into MM's import folder *and* read the ``.mdb`` to push official
+    results. ``--no-import`` runs the official-results push only.
+  * ``mm-import`` — pull-only (just the import half of ``manager``), for a box
+    that should receive Dolphin times but not push official results.
 """
 
 from __future__ import annotations
@@ -34,8 +36,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     ap.add_argument("--headless", action="store_true", help="No GUI — run from the CLI.")
     ap.add_argument("--mode", default="dolphin", choices=["dolphin", "manager", "mm-import"],
-                    help="'dolphin' (folder watch), 'manager' (Hy-Tek Meet Manager .mdb), "
-                         "or 'mm-import' (pull relayed Dolphin .do3 into MM's import folder).")
+                    help="'dolphin' (folder watch), 'manager' (Meet Manager PC: pull .do3 + "
+                         "push official .mdb results), or 'mm-import' (pull-only).")
     ap.add_argument("--url", help="Base URL of the ingest server, e.g. http://localhost:8080")
     ap.add_argument("--token", default="", help="Optional bearer token; omitted if blank.")
     ap.add_argument("--once", action="store_true",
@@ -55,6 +57,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     g_mm.add_argument("--mdb-path", help="Path to the live Meet Manager .mdb (required for --mode manager).")
     g_mm.add_argument("--poll-interval", type=float, default=12.0,
                       help="Seconds between MDB re-reads in Manager mode (default: 12).")
+    g_mm.add_argument("--no-import", action="store_true",
+                      help="Manager mode: skip the .do3 import-pull (push official results only). "
+                           "The pull otherwise uses --import-dir / --import-poll / --no-notify below.")
 
     g_imp = ap.add_argument_group("mm-import mode")
     g_imp.add_argument("--import-dir",
@@ -111,7 +116,7 @@ def run_dolphin_headless(args: argparse.Namespace) -> int:
 
 
 def run_mm_headless(args: argparse.Namespace) -> int:
-    from .mm_watcher import MmWatcher, MmWatcherConfig
+    from .manager_watcher import ManagerWatcher, ManagerWatcherConfig
 
     missing = [f for f in ("mdb_path", "url") if not getattr(args, f)]
     if missing:
@@ -124,17 +129,20 @@ def run_mm_headless(args: argparse.Namespace) -> int:
         print(f"MDB does not exist: {mdb}", file=sys.stderr)
         return 1
 
-    cfg = MmWatcherConfig(
+    cfg = ManagerWatcherConfig(
         mdb_path=mdb,
         base_url=args.url,
         token=args.token,
         poll_interval=args.poll_interval,
+        import_dir=Path(args.import_dir) if args.import_dir else None,
+        import_poll=args.import_poll,
+        notify=not bool(args.no_notify),
+        pull_import=not bool(args.no_import),
     )
-    watcher = MmWatcher(cfg, on_event=_safe_print)
+    watcher = ManagerWatcher(cfg, on_event=_safe_print)
 
     if args.once:
-        # One read+push cycle, inline, then exit.
-        watcher._cycle()
+        watcher.run_once()  # one cycle of each enabled loop, then exit
         return 0
 
     return _run_until_stopped(watcher)

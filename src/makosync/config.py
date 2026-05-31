@@ -33,9 +33,11 @@ def config_path() -> Path:
 
 @dataclass
 class AppConfig:
-    # Which producer mode the launcher last ran. "dolphin" watches a CTS
-    # Dolphin folder (unofficial times); "manager" reads the Hy-Tek Meet Manager
-    # .mdb (official results). URL + token below are shared across both modes.
+    # Which producer mode the launcher last ran. "dolphin" watches a CTS Dolphin
+    # folder (unofficial times); "manager" runs on the Meet Manager PC and does
+    # both jobs at once — pulls Dolphin .do3 into MM's import folder *and* reads
+    # the .mdb to push official results. URL + token below are shared across modes.
+    # (The old standalone "mm-import" mode folded into "manager"; load() migrates it.)
     mode: str = "dolphin"
 
     base_url: str = ""
@@ -52,11 +54,12 @@ class AppConfig:
     mdb_path: str = ""        # path to the live Hy-Tek MM .mdb on the scoring PC
     poll_interval: float = 12.0  # seconds between MDB re-reads
 
-    # --- Meet Manager IMPORT (receiver) mode ---
-    # Runs on the scoring PC. Pulls the Dolphin .do3 files (relayed via
-    # makosmeets), renamed <meetid>-000-E<ev>_H<ht>.do3, into the folder Meet
-    # Manager imports Dolphin times from — so the operator just Get-Times instead
-    # of hunting for the right file. Shares base_url + token with the other modes.
+    # --- Meet Manager import-pull (part of "manager" mode) ---
+    # The scoring PC pulls the Dolphin .do3 files (relayed via makosmeets),
+    # renamed <meetid>-000-E<ev>_H<ht>.do3, into the folder Meet Manager imports
+    # Dolphin times from — so the operator just Get-Times instead of hunting for
+    # the right file. Runs alongside the .mdb official-results push above, on its
+    # own (faster) cadence. import_dir blank => the .mdb's parent folder.
     import_dir: str = ""          # where to drop renamed .do3 for Meet Manager
     import_poll: float = 2.0      # seconds between server polls
     import_notify: bool = True    # Windows toast when a heat lands
@@ -73,7 +76,11 @@ class AppConfig:
             return cls()
         try:
             data: dict[str, Any] = json.loads(p.read_text(encoding="utf-8"))
-            return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+            cfg = cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+            if cfg.mode == "mm-import":  # standalone MM Import merged into Manager
+                logger.info("migrating saved mode 'mm-import' -> 'manager'")
+                cfg.mode = "manager"
+            return cfg
         except Exception:
             logger.exception("could not load config from %s", p)
             return cls()

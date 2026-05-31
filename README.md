@@ -9,15 +9,14 @@ Meet Manager, and Dolphin files reach the scoring PC without a USB stick.
 > Server side (the endpoints this app talks to) lives in the makosmeets repo;
 > see its `docs/makosync.md` for the full cross-repo picture.
 
-## Three modes
+## Two modes
 
 Pick one at launch (GUI) or with `--mode`. URL + token are shared across modes.
 
 | Mode | Runs on | What it does |
 |---|---|---|
 | **Dolphin** | the CTS Dolphin PC | Watches the Dolphin output folder, parses each `.do3/.do4/.csv` heat, POSTs **unofficial** times to makosmeets (feeds `/tv`), and archives the raw file. |
-| **Manager** | the Hy-Tek Meet Manager PC | Reads the live `.mdb` (bundled mdbtools) every ~12 s and POSTs the reconciled **official** results (places, DQs). Also pushes the seeded event list to the Dolphin machine. |
-| **MM Import** | the Meet Manager PC | Pulls the Dolphin `.do3` files (relayed via makosmeets), renamed `<meetid>-000-E<ev>_H<ht>.do3`, into the folder Meet Manager imports from — with a toast per heat. See [`docs/mm-import-relay.md`](docs/mm-import-relay.md). |
+| **Manager** | the Hy-Tek Meet Manager PC | Does both halves of the scoring PC's job at once, each on its own cadence: **pulls** the Dolphin `.do3` files (relayed via makosmeets, renamed `<meetid>-000-E<ev>_H<ht>.do3`) into the folder Meet Manager imports from — toast per heat (~2 s); and **reads** the live `.mdb` (bundled mdbtools) to POST the reconciled **official** results — places, DQs (~12 s). Also pushes the seeded event list to the Dolphin machine. See [`docs/mm-import-relay.md`](docs/mm-import-relay.md). |
 
 Both meet PCs only make **outbound HTTPS** to makosmeets — no LAN/firewall config
 between them.
@@ -30,8 +29,10 @@ folder/URL/token, **Start**. Settings persist to `%APPDATA%\MakoSync\config.json
 Headless (testing / automation):
 
 ```
-makosync --headless --mode dolphin   --folder "C:\CTSDolphin\output" --url https://www.makosmeets.com --token <TOKEN>
-makosync --headless --mode manager   --mdb-path "C:\swmeets8\meet.mdb" --url https://www.makosmeets.com --token <TOKEN>
+makosync --headless --mode dolphin --folder "C:\CTSDolphin\output" --url https://www.makosmeets.com --token <TOKEN>
+makosync --headless --mode manager --mdb-path "C:\swmeets8\meet.mdb" --url https://www.makosmeets.com --token <TOKEN>
+# manager pulls .do3 into the .mdb's folder by default; --import-dir overrides, --no-import disables the pull.
+# mm-import remains as a pull-only mode (the import half of manager, for a box that shouldn't push official results):
 makosync --headless --mode mm-import --import-dir "C:\swmeets8" --url https://www.makosmeets.com --token <TOKEN>
 ```
 

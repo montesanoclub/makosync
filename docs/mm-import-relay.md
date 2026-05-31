@@ -7,7 +7,7 @@ PCs talking directly — both only make outbound HTTPS to makosmeets.
 ```
 Dolphin PC                         makosmeets (Cloudflare)            Meet Manager PC
 ──────────                         ───────────────────────            ───────────────
-MakoSync (dolphin mode)            R2 dolphin-raw/<date>/             MakoSync (mm-import mode)
+MakoSync (dolphin mode)            R2 dolphin-raw/<date>/             MakoSync (manager mode: pull half)
   watch C:\CTSDolphin\output  ─┐   <original-filename>          ┌─►  poll /pending every 2s
   POST raw .do3 + .do4 ────────┴─► (forensic sink) ─────────────┘    download new .do3
                                    GET /pending  (do3⨝do4 join)      write <meetid>-000-E##_H##.do3
@@ -48,9 +48,12 @@ sink and `/pending` compute it identically.
 
 - **Dolphin PC:** MakoSync **Dolphin** mode (unchanged) — it already uploads raw
   files when "Upload raw files" is on (the default).
-- **Meet Manager PC:** MakoSync **MM Import** mode. Set the makosmeets URL +
-  token (same as the Dolphin PC) and the import folder (defaults to the folder
-  your `.mdb` is in). Start. Each new heat lands renamed + toasts.
+- **Meet Manager PC:** MakoSync **Manager** mode (this pull is one half of it;
+  the other reads the `.mdb` and pushes official results). Set the makosmeets URL
+  + token (same as the Dolphin PC), the `.mdb` path, and optionally the import
+  folder (defaults to the `.mdb`'s folder). Start. Each new heat lands renamed +
+  toasts. To run pull-only without the official-results push, use the headless
+  `--mode mm-import` (or `--mode manager --no-import`).
 
 ## Notes / limits
 

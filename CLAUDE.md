@@ -7,8 +7,9 @@ makosmeets. This file is MakoSync-specific.
 
 ## What it is
 
-A Windows desktop companion app for swim-meet operators. Three modes — Dolphin /
-Meet Manager / MM Import — plus the Dolphin→Meet Manager relay. Python +
+A Windows desktop companion app for swim-meet operators. Two modes — Dolphin and
+Manager (the Meet Manager PC's combined pull-`.do3` + push-official-`.mdb` mode,
+each on its own cadence) — plus the Dolphin→Meet Manager relay. Python +
 PyInstaller, packaged as an Inno Setup `.exe` installer. Users **download and
 install** it; it checks GitHub Releases on startup and prompts to update. Full
 domain context lives in the makosmeets repo at `docs/makosync.md`.
