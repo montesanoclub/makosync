@@ -33,9 +33,10 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\src\makosync\assets\mako.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-; In-app self-update: close the running MakoSync so its .exe can be replaced.
-; We relaunch it ourselves via the WizardSilent [Run] entry, so don't let Inno
-; also restart it (that would double-launch).
+; In-app self-update hands off to a detached helper that waits for MakoSync to
+; fully exit before running this installer, so the files are never locked. We
+; keep CloseApplications=yes as a backstop for a manual reinstall over a running
+; app; RestartApplications=no because the helper does the relaunch.
 CloseApplications=yes
 RestartApplications=no
 
@@ -47,8 +48,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Name: "autostart";   Description: "Start automatically when I log in"; GroupDescription: "Startup:"; Flags: unchecked
 
 [Files]
-Source: "..\dist\MakoSync.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\docs\ingest-contract.md";    DestDir: "{app}\docs"; Flags: ignoreversion
+; --onedir build: ship the whole PyInstaller folder (MakoSync.exe + _internal\).
+Source: "..\dist\MakoSync\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\docs\ingest-contract.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -56,7 +58,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
 
 [Run]
-; Interactive install: offer the usual "Launch MakoSync" checkbox.
+; Interactive install: offer the usual "Launch MakoSync" checkbox. (Silent installs
+; are driven by the self-update helper, which relaunches MakoSync itself — so no
+; WizardSilent [Run] here, or we'd double-launch.)
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
-; Silent install (in-app self-update): relaunch automatically.
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent

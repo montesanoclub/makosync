@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 import os
 import queue
-import subprocess
 import sys
 import tempfile
 import threading
@@ -608,6 +607,7 @@ class GuiApp:
         if not messagebox.askyesno("Update MakoSync",
                 f"Download and install v{info.latest}?\nMakoSync will close and restart."):
             return
+        self._update_info = info
         self._persist()  # keep settings before the restart
         self._set_update_busy("Downloading…")
 
@@ -615,7 +615,8 @@ class GuiApp:
             try:
                 from . import updater
                 dest = Path(tempfile.gettempdir()) / (info.asset_name or "MakoSync-Setup.exe")
-                updater.download(info.asset_url, dest, progress=self._download_progress)
+                updater.download(info.asset_url, dest, progress=self._download_progress,
+                                 expected_size=getattr(info, "asset_size", 0))
                 out = (str(dest), None)
             except Exception as e:  # noqa: BLE001 — surfaced to the user below
                 out = (None, e)
@@ -657,19 +658,39 @@ class GuiApp:
             self._restore_update_btn()
             messagebox.showwarning("Update failed", f"Couldn't download the installer.\n\n{err}")
             return
-        self._log_line("downloaded installer; launching to install + restart…")
-        try:
-            flags = 0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
-            subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES"],
-                             creationflags=flags, close_fds=True)
-        except Exception as e:  # noqa: BLE001 — surfaced to the user below
-            self._log_line(f"could not launch installer: {e}")
+        # A sync may have been started during the download — never update mid-sync.
+        if self.watcher and self.watcher.is_running():
+            self._log_line("a sync started during the download — update canceled")
             self._restore_update_btn()
-            messagebox.showwarning("Update failed", f"Couldn't launch the installer.\n\n{e}")
+            messagebox.showinfo("Sync running", "Update canceled — stop the sync and try again.")
             return
-        # Exit so the installer can replace this exe; CloseApplications + the
-        # silent-relaunch [Run] entry bring MakoSync back up on the new version.
-        self.root.after(700, self._on_close)
+        # Only a frozen (installed) build has an exe to replace. From source there's
+        # nothing to install — just point at the download page and bail.
+        if not getattr(sys, "frozen", False):
+            self._log_line("not an installed build; opening the download page instead")
+            if self._update_info:
+                webbrowser.open(self._update_info.release_url)
+            self._restore_update_btn()
+            return
+        # Guard against the installer vanishing (AV quarantine, cleanup) between the
+        # verified download and now — better to surface it than silently relaunch the old exe.
+        if not Path(path).exists():
+            self._log_line(f"installer vanished before launch: {path}")
+            self._restore_update_btn()
+            messagebox.showwarning("Update failed", "The downloaded installer disappeared. Try again.")
+            return
+        self._log_line("downloaded installer; closing so it can install + relaunch…")
+        try:
+            from . import updater
+            updater.launch_update(path, target_exe=sys.executable, pid=os.getpid())
+        except Exception as e:  # noqa: BLE001 — surfaced to the user below
+            self._log_line(f"could not start the updater: {e}")
+            self._restore_update_btn()
+            messagebox.showwarning("Update failed", f"Couldn't start the update.\n\n{e}")
+            return
+        # Close so the helper's wait loop completes and the installer can replace
+        # the now-unlocked exe; the helper relaunches MakoSync on the new version.
+        self.root.after(400, self._on_close)
 
     # ---- polling for log + status -------------------------------------
 
@@ -778,11 +799,16 @@ class GuiApp:
             logger.exception("settings autosave failed")
 
     def _on_close(self) -> None:
+        # try/finally so a failing _persist()/stop() (e.g. disk full) can't keep the
+        # window alive — during a self-update the helper waits for this process to
+        # exit, so destroy() MUST run no matter what.
         self._alive = False
-        self._persist()  # save whatever's in the fields on a clean close
-        if self.watcher:
-            self.watcher.stop()
-        self.root.destroy()
+        try:
+            self._persist()  # save whatever's in the fields on a clean close
+            if self.watcher:
+                self.watcher.stop()
+        finally:
+            self.root.destroy()
 
 
 def run_gui() -> int:
