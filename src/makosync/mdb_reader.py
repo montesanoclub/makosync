@@ -187,12 +187,19 @@ def rows_to_heats(
     # Event_ptr -> Event_no. Entries/relays carry the ptr; the program is keyed
     # by the human event number.
     ptr_to_no: dict[int, int] = {}
+    # Event_no -> scored?  Event.Event_stat is Meet Manager's per-event lifecycle
+    # (Text 1): '1' seeded · 'A' placed-but-not-scored · 'S' scored
+    # (docs/hy-tek-mdb-schema.md §"Detecting scored events"). 'S' is the only value
+    # that means the operator has committed the result. We carry it onto every heat
+    # of the event so the server can hold the official tier back until then.
+    no_scored: dict[int, bool] = {}
     for ev in events:
         r = _lower_keyed(ev)
         ptr = _parse_int(r.get("event_ptr"))
         no = _parse_int(r.get("event_no"))
         if ptr and no:
             ptr_to_no[ptr] = no
+            no_scored[no] = str(r.get("event_stat") or "").strip().upper() == "S"
 
     # Roster of known athlete numbers, mirroring convert.mjs's athleteLookup keys.
     ath_set: set[int] | None = None
@@ -256,6 +263,7 @@ def rows_to_heats(
             race_id="",  # the watcher stamps a per-heat content hash before POST
             lanes=lanes,
             source_file=source_file,
+            scored=no_scored.get(event_no, False),
         ))
     return out
 

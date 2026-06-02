@@ -19,10 +19,10 @@ from makosync.mm_watcher import MmWatcher, MmWatcherConfig
 from makosync.parser import LaneTime, ParsedHeat
 
 
-def _heat(time: str = "30.00") -> ParsedHeat:
+def _heat(time: str = "30.00", scored: bool = False) -> ParsedHeat:
     return ParsedHeat(
         format="mm", dataset="mm", event=5, heat=1, round="F", race_id="",
-        lanes=[LaneTime(lane=4, time=time, place=1)],
+        lanes=[LaneTime(lane=4, time=time, place=1)], scored=scored,
     )
 
 
@@ -74,6 +74,19 @@ def test_changed_heat_is_resent(monkeypatch, box):
     w = _make(client, monkeypatch, box)
     w._cycle()
     box["heats"] = [_heat("29.50")]  # a re-timed result
+    w._cycle()
+    assert client.calls == 2
+
+
+def test_score_flip_is_resent(monkeypatch, box):
+    # Scoring an event (Event_stat 'A' -> 'S') flips `scored` WITHOUT changing any
+    # lane time/place. The digest must fold in `scored` so this re-POSTs — else the
+    # server never learns the event is scored and the official result never reaches
+    # the TV. The reverse (un-score to fix an error) must re-POST too.
+    client = FakeClient([IngestResult(ok=True, status=200)])
+    w = _make(client, monkeypatch, box)
+    w._cycle()                               # initial push, scored=False
+    box["heats"] = [_heat(scored=True)]      # identical lanes, now scored
     w._cycle()
     assert client.calls == 2
 

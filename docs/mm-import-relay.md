@@ -10,7 +10,7 @@ Dolphin PC                         makosmeets (Cloudflare)            Meet Manag
 MakoSync (dolphin mode)            R2 dolphin-raw/<date>/             MakoSync (manager mode: pull half)
   watch C:\CTSDolphin\output  ─┐   <original-filename>          ┌─►  poll /pending every 2s
   POST raw .do3 + .do4 ────────┴─► (forensic sink) ─────────────┘    download new .do3
-                                   GET /pending  (do3⨝do4 join)      write <meetid>-000-E##_H##.do3
+                                   GET /pending  (do3⨝do4 join)      write <original>_E##_H##.do3
                                    GET /ingest/file?key=             into MM's import folder
                                                                      → Windows toast → operator Get-Times
 ```
@@ -21,15 +21,22 @@ A Dolphin `.do3` carries **no event/heat** — the filename is
 `<meetid>-000-00F<race>.do3` and the body header is literally `0;0`. The `.do4`
 for the same race **does**: `<meetid>-<event>-<heat><round>-<race>.do4`. They
 pair on **(meet id, race)** — the first and last fields of the filename. So the
-server reads event/heat off the `.do4` and rebuilds the `.do3` name as
-`<meetid>-000-E<ev>_H<ht>.do3`:
+server reads event/heat off the `.do4` and **suffixes** it onto the original
+`.do3` name (e.g. `015-000-00F0005.do3` → `015-000-00F0005_E22_H02.do3`):
 
 - **Meet id preserved** — Meet Manager only imports files whose first field
-  matches its loaded meet.
-- **Event/heat encoded** — so the operator can pick the right file from MM's
-  manual Get-Times list (MM does not auto-match by filename here).
+  matches its loaded meet (still the first field after the suffix).
+- **Race number preserved** — Meet Manager's *"Get Times by Race Number"* import
+  lets the operator type the Dolphin race number, which lives in the original name
+  (trailing 4 digits). Rebuilding the name as `<meetid>-000-E##_H##.do3` clobbered
+  it; suffixing keeps **both** MM import paths working. (We only learned of the
+  race-number import path on 2026-06-02 — Kyle.)
+- **Event/heat encoded** — the `_E##_H##` suffix tells the operator which heat it
+  is in MM's manual Get-Times file-pick list.
 
-The relayed `.do3` is byte-identical to the original; only the name changes.
+The relayed `.do3` is byte-identical to the original; only the name changes. The
+server (`v2/.../pending/route.ts`) computes `out_name`; the receiver writes it
+verbatim, so the format lives server-side.
 
 ## Server endpoints (makosmeets v2)
 

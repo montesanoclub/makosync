@@ -67,6 +67,12 @@ class ParsedHeat:
     race_id: str
     lanes: list[LaneTime] = field(default_factory=list)
     source_file: str = ""
+    scored: bool = False        # Meet Manager only: the event has been SCORED
+                                # (Event.Event_stat == 'S'). Dolphin/CSV are always
+                                # False. The server promotes the official result to
+                                # the public TV/meet ONLY when this is True — until an
+                                # event is scored the operator can still fix a mis-entry,
+                                # so we keep showing the Dolphin time. See mdb_reader.
 
     @property
     def timed_lanes(self) -> list[LaneTime]:

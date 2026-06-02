@@ -62,7 +62,7 @@ class AppConfig:
 
     # --- Meet Manager import-pull (part of "manager" mode) ---
     # The scoring PC pulls the Dolphin .do3 files (relayed via makosmeets),
-    # renamed <meetid>-000-E<ev>_H<ht>.do3, into the folder Meet Manager imports
+    # renamed <original>_E<ev>_H<ht>.do3 (race number preserved), into the folder Meet Manager imports
     # Dolphin times from — so the operator just Get-Times instead of hunting for
     # the right file. Runs alongside the .mdb official-results push above, on its
     # own (faster) cadence. import_dir blank => the .mdb's parent folder.

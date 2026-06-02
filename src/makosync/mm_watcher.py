@@ -44,8 +44,18 @@ class MmWatcherConfig:
 
 
 def heat_digest(heat: ParsedHeat) -> str:
-    """Stable hash of a heat's published lane tuples (lane/time/place/dq)."""
+    """Stable hash of a heat's published state: lane tuples (lane/time/place/dq)
+    PLUS the event's ``scored`` flag.
+
+    ``scored`` MUST be in the hash. Scoring an event in Meet Manager (Event_stat
+    'A' -> 'S') flips ``scored`` without touching any lane time or place, so a
+    digest over lanes alone would be byte-identical before and after scoring — the
+    watcher would never re-POST, and the server would never learn the event is
+    scored (so the official result would never reach the TV). The same applies in
+    reverse if the operator un-scores to fix a mistake.
+    """
     h = hashlib.sha1()
+    h.update(f"scored={heat.scored}|".encode("utf-8"))
     for ln in sorted(heat.timed_lanes, key=lambda l: l.lane):
         h.update(f"{ln.lane}|{ln.time}|{ln.place}|{ln.dq}".encode("utf-8"))
     return h.hexdigest()

@@ -2,8 +2,10 @@
 
 The mirror image of the Dolphin :class:`~makosync.watcher.Watcher`. The Dolphin
 PC pushes every raw file to makosmeets; this runs on the *scoring* PC and pulls
-the .do3s back down — renamed ``<meetid>-000-E<ev>_H<ht>.do3`` (event/heat
-recovered server-side from the paired do4) — into the folder Meet Manager
+the .do3s back down — renamed ``<original>_E<ev>_H<ht>.do3`` (event/heat
+recovered server-side from the paired do4 and **suffixed** onto the original
+name, so the Dolphin race number survives for MM's Get-Times-by-Race import) —
+into the folder Meet Manager
 imports Dolphin times from, then pops a toast so the operator knows to Get
 Times. Routing through makosmeets means the two meet PCs never talk directly:
 both only make outbound HTTPS, no LAN/firewall config between them.

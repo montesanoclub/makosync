@@ -111,6 +111,9 @@ def _heat_to_payload(heat: ParsedHeat, tier: str = "unofficial", source: str = "
         "round": heat.round,
         "tier": tier,
         "source": source,
+        # Event-scored flag (Meet Manager only; always False for Dolphin). The
+        # server only promotes an official result to the public display when True.
+        "scored": heat.scored,
         "captured_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "lanes": [_lane_to_dict(ln) for ln in heat.timed_lanes],
     }

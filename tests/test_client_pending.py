@@ -9,7 +9,7 @@ def test_fetch_pending_parses_files(monkeypatch):
     c = IngestClient("https://makosmeets.com", "tok")
     body = (
         '{"ok":true,"count":1,"files":['
-        '{"out_name":"015-000-E22_H02.do3",'
+        '{"out_name":"015-000-00F0005_E22_H02.do3",'
         '"key":"dolphin-raw/2026-05-29/015-000-00F0005.do3",'
         '"event":22,"heat":2,"race_id":"0005","meet_id":"015"}]}'
     )
@@ -19,7 +19,9 @@ def test_fetch_pending_parses_files(monkeypatch):
     assert res.ok
     assert len(files) == 1
     assert files[0]["event"] == 22
-    assert files[0]["out_name"] == "015-000-E22_H02.do3"
+    # out_name suffixes _E##_H## onto the original do3 name (race number preserved
+    # for MM's Get-Times-by-Race import), never clobbers it.
+    assert files[0]["out_name"] == "015-000-00F0005_E22_H02.do3"
 
 
 def test_fetch_pending_error_returns_empty(monkeypatch):

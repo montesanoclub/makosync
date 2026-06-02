@@ -36,7 +36,8 @@ def _entry(meet="015", event=22, heat=2, race="0005"):
         "event": event,
         "heat": heat,
         "src_name": f"{meet}-000-00F{race}.do3",
-        "out_name": f"{meet}-000-E{event:02d}_H{heat:02d}.do3",
+        # out_name suffixes _E##_H## onto the original do3 name (server-built).
+        "out_name": f"{meet}-000-00F{race}_E{event:02d}_H{heat:02d}.do3",
         "key": f"dolphin-raw/2026-05-29/{meet}-000-00F{race}.do3",
     }
 
@@ -56,7 +57,7 @@ def test_pull_writes_renamed_file_and_toasts(tmp_path):
     w, client, toasts = _watcher(tmp_path, [e], {e["key"]: DO3_BYTES})
     w._cycle()
 
-    dest = tmp_path / "015-000-E22_H02.do3"
+    dest = tmp_path / "015-000-00F0005_E22_H02.do3"
     assert dest.exists()
     assert dest.read_bytes() == DO3_BYTES          # bytes are relayed verbatim
     assert client.downloads == [e["key"]]
@@ -91,7 +92,7 @@ def test_meet_id_preserved_in_out_name(tmp_path):
     w, _, _ = _watcher(tmp_path, [e], {e["key"]: DO3_BYTES})
     w._cycle()
     # First field (meet id) preserved — Meet Manager only imports files matching it.
-    assert (tmp_path / "014-000-E03_H01.do3").exists()
+    assert (tmp_path / "014-000-00F0003_E03_H01.do3").exists()
 
 
 def test_download_failure_retries_then_gives_up(tmp_path):

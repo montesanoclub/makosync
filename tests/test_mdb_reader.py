@@ -83,6 +83,36 @@ def test_individual_timed_finals_basic():
     ]
 
 
+def test_event_stat_scored_flag():
+    """Event_stat == 'S' marks the event scored; placed-not-scored ('A') is not.
+
+    The score flag gates whether the server promotes the official result to the
+    public TV — until 'S', the operator can still fix a mis-entry.
+    """
+    events = [
+        {"Event_ptr": "10", "Event_no": "5", "Ind_rel": "I", "Event_stat": "S"},
+        {"Event_ptr": "20", "Event_no": "8", "Ind_rel": "R", "Event_stat": "A"},
+    ]
+    entries = [
+        {"Event_ptr": "10", "Pre_heat": "1", "Pre_lane": "4", "Fin_Time": "30.00", "Fin_place": "1"},
+    ]
+    relays = [
+        {"Event_ptr": "20", "Pre_heat": "1", "Pre_lane": "1", "Fin_Time": "120.00", "Fin_place": "1"},
+    ]
+    by = {h.event: h for h in rows_to_heats(events, entries, relays)}
+    assert by[5].scored is True     # Event_stat 'S'  -> scored
+    assert by[8].scored is False    # Event_stat 'A' (placed, not scored) -> held back
+
+
+def test_event_stat_absent_or_blank_defaults_not_scored():
+    # No Event_stat column (or blank) -> not scored, so the official tier is held
+    # back by default rather than leaking an unconfirmed result.
+    entries = [
+        {"Event_ptr": "10", "Pre_heat": "1", "Pre_lane": "4", "Fin_Time": "30.00", "Fin_place": "1"},
+    ]
+    assert rows_to_heats(EVENTS, entries, [])[0].scored is False  # EVENTS has no Event_stat
+
+
 def test_pre_wins_over_fin_for_heat_and_lane():
     # The parity catch: convert.mjs keys Pre_ first, NOT Fin_ first as the plan
     # prose said. A prelim/finals divergence (Pre != Fin) must follow Pre.

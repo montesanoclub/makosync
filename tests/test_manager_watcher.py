@@ -45,7 +45,8 @@ def _entry(meet="015", event=22, heat=2, race="0005"):
     return {
         "race_id": race, "meet_id": meet, "event": event, "heat": heat,
         "src_name": f"{meet}-000-00F{race}.do3",
-        "out_name": f"{meet}-000-E{event:02d}_H{heat:02d}.do3",
+        # out_name suffixes _E##_H## onto the original do3 name (server-built).
+        "out_name": f"{meet}-000-00F{race}_E{event:02d}_H{heat:02d}.do3",
         "key": f"dolphin-raw/2026/{meet}-000-00F{race}.do3",
     }
 

@@ -75,7 +75,8 @@ lane tuples changed since the last poll. `race_id` is a per-heat content hash
   "heat": 2,                        // Pre_heat || Fin_heat  (Pre wins)
   "tier": "official",
   "source": "mm",
-  "race_id": "9f2ab0008d4d",        // content hash of this heat's lanes
+  "scored": false,                  // Event.Event_stat == 'S' — see below
+  "race_id": "9f2ab0008d4d",        // content hash of this heat's lanes + scored
   "captured_at": "2026-05-29T17:21:58Z",
   "lanes": [
     { "lane": 3, "time": "1:05.43", "place": 1, "dq": false },
@@ -87,8 +88,18 @@ lane tuples changed since the last poll. `race_id` is a per-heat content hash
 Field parity with `v2/containers/mdb-parser/convert.mjs` is mandatory — the
 overlay must key to the **same** lane the bake used. See
 `src/makosync/mdb_reader.py` for the exact mapping (and the Pre-vs-Fin precedence
-note). DQ is not yet emitted: it isn't represented in `convert.mjs` or the
-documented `Entry` schema, so it needs a confirmed field from a real DQ'd row.
+note).
+
+**`scored` — the official-result gate (added 2026-06-02).** `Event.Event_stat`
+is Meet Manager's per-event lifecycle (`1` seeded · `A` placed-but-not-scored ·
+`S` scored). `scored` is `Event_stat == 'S'`. The server promotes an official
+result to the public TV/`/meet` **only when `scored` is true** — until an event
+is scored the operator can still fix a mis-entry, so makosmeets keeps showing the
+Dolphin (unofficial) time. This means **the score-flip must change the dedup
+hash**: scoring an event flips `Event_stat` without touching any lane time/place,
+so `heat_digest` folds `scored` in (see `mm_watcher.py`) — otherwise the re-POST
+that carries `scored:true` would never fire. DQ is emitted as a per-lane `dq`
+boolean (`Entry.Fin_stat == 'Q'`); the infraction code/reason text is not.
 
 ## `POST /api/live-results/ingest/file/` — raw file (on by default)
 

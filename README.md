@@ -16,7 +16,7 @@ Pick one at launch (GUI) or with `--mode`. URL + token are shared across modes.
 | Mode | Runs on | What it does |
 |---|---|---|
 | **Dolphin** | the CTS Dolphin PC | Watches the Dolphin output folder, parses each `.do3/.do4/.csv` heat, POSTs **unofficial** times to makosmeets (feeds `/tv`), and archives the raw file. |
-| **Manager** | the Hy-Tek Meet Manager PC | Does both halves of the scoring PC's job at once, each on its own cadence: **pulls** the Dolphin `.do3` files (relayed via makosmeets, renamed `<meetid>-000-E<ev>_H<ht>.do3`) into the folder Meet Manager imports from — toast per heat (~2 s); and **reads** the live `.mdb` (bundled mdbtools) to POST the reconciled **official** results — places, DQs (~12 s). Also pushes the seeded event list to the Dolphin machine. See [`docs/mm-import-relay.md`](docs/mm-import-relay.md). |
+| **Manager** | the Hy-Tek Meet Manager PC | Does both halves of the scoring PC's job at once, each on its own cadence: **pulls** the Dolphin `.do3` files (relayed via makosmeets, renamed `<original>_E<ev>_H<ht>.do3` — race number preserved) into the folder Meet Manager imports from — toast per heat (~2 s); and **reads** the live `.mdb` (bundled mdbtools) to POST the reconciled **official** results — places, DQs, and the per-event `scored` flag that gates whether they go live (~12 s). Also pushes the seeded event list to the Dolphin machine. See [`docs/mm-import-relay.md`](docs/mm-import-relay.md). |
 
 Both meet PCs only make **outbound HTTPS** to makosmeets — no LAN/firewall config
 between them.
