@@ -66,3 +66,4 @@ Manager mode). Unsigned → SmartScreen "More info → Run anyway" on first laun
 - [`docs/mm-import-relay.md`](docs/mm-import-relay.md) — the Dolphin → Meet Manager relay (MM Import).
 - [`docs/dolphin-events-relay.md`](docs/dolphin-events-relay.md) — the seeded-event-list relay.
 - [`docs/ingest-contract.md`](docs/ingest-contract.md) — the results ingest payload contract.
+- [`docs/dolphin-latency.md`](docs/dolphin-latency.md) — **known issue:** why Dolphin sends feel slow (poll floor + double-stability) and how flaky wifi stalls the feed (blocking serial retry).
