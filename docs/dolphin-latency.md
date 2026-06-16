@@ -129,16 +129,22 @@ versions are the *safe* variants:
    sentinel) always uses the size-stable gate. Per-heat floor drops from ~2–4 s
    to <~1 s. **Exposed in the Dolphin GUI** ("Scan every … s", `cfg.dolphin_poll`,
    floor 0.25 s) — previously hardcoded.
-2. **Fail fast (split timeout).** New `HEAT_TIMEOUT = 5.0` for the heat POST only;
+2. **Fail fast (split timeout).** New `HEAT_TIMEOUT = 3.0` for the heat POST only;
    the raw upload + relay/download GETs keep `DEFAULT_TIMEOUT = 8.0`. (Not a flat
-   global cut — the timeout is shared across all endpoints, so a global 3 s would
-   have made the large raw upload and the `download_file` pull fragile. 5 s leaves
-   headroom for a fresh-connection TLS handshake on congested wifi.)
-4. **Retry re-budget (not "collapse").** `RETRY_DELAYS (1,2,4,8) → (0.5,1)` and
-   `MAX_HANDLE_ATTEMPTS 8 → 4`. Both layers are kept — the across-poll layer is
-   the *only* retry for parse/lock failures (`parse_file → None`), so deleting it
-   would silently drop a still-writing file. Worst-case for one dead-link heat:
-   was ~7.5 min / ~40 HTTP attempts → now ~80–90 s / ~12 attempts.
+   global cut — the timeout is shared across all endpoints, so cutting the global
+   constant would make the large raw upload and the `download_file` pull fragile.)
+4. **Stop the two retry layers multiplying.** The 7.5 min came from
+   (5 in-call attempts) × (8 poll retries) = the 8 s socket timeout multiplied 40×.
+   The heat POST now opts OUT of the in-call backoff (`send_heat` passes
+   `retry_delays=()`), so one heat send = ONE ~3 s attempt; the watcher's
+   across-poll layer is the only retry, capped at `MAX_HANDLE_ATTEMPTS = 3`.
+   (`RETRY_DELAYS` stays `(1,2,4,8)` for the off-thread raw upload + relays, which
+   are fine to retry longer.) That across-poll layer is kept because it is also the
+   *only* retry for parse/lock failures (`parse_file → None`), so deleting it would
+   silently drop a still-writing file. Worst-case for one stuck heat: was
+   ~7.5 min / ~40 attempts → now ~3 × 3 s ≈ **10 s** / 3 attempts, then we give up
+   and keep the feed moving (the venue link is reliable, so a 10 s-failing send is
+   a real outage, not a blip).
 
 Tests: `tests/test_watcher_stability.py` (checksum fast-path + truncation
 safety), `tests/test_client_timeout.py` (split timeout + bounded retries),

@@ -73,16 +73,16 @@ def _run_until(w: Watcher, cond, timeout: float = 3.0) -> None:
 
 
 def test_retries_5xx_until_success(tmp_path):
+    # Two transient failures then success — fits within MAX_HANDLE_ATTEMPTS (3).
     client = FakeClient([
-        IngestResult(ok=False, status=503, detail="down"),
         IngestResult(ok=False, status=503, detail="down"),
         IngestResult(ok=False, status=0, detail="conn refused"),
         IngestResult(ok=True, status=200, detail="ok"),
     ])
     w = _make_watcher(tmp_path, client)
-    _run_until(w, lambda: client.calls >= 4 and FILENAME in w._seen)
+    _run_until(w, lambda: client.calls >= 3 and FILENAME in w._seen)
 
-    assert client.calls >= 4, "watcher should have retried across polls"
+    assert client.calls >= 3, "watcher should have retried across polls"
     assert FILENAME in w._seen, "file should be marked seen once it finally sent"
     assert w.stats.sent_heat == 1
     assert FILENAME not in w._size_seen  # pruned after done (M1)

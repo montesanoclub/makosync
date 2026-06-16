@@ -48,7 +48,7 @@ def test_send_heat_uses_short_timeout(monkeypatch):
     monkeypatch.setattr(client_mod.request, "urlopen", fake_urlopen)
     res = IngestClient("https://makosmeets.com", "tok").send_heat(_heat())
     assert res.ok
-    assert seen["timeout"] == HEAT_TIMEOUT == 5.0
+    assert seen["timeout"] == HEAT_TIMEOUT == 3.0
 
 
 def test_send_file_uses_default_timeout(tmp_path, monkeypatch):
@@ -80,9 +80,10 @@ def test_download_file_uses_default_timeout(monkeypatch):
     assert seen["timeout"] == DEFAULT_TIMEOUT
 
 
-def test_in_call_retry_count_is_bounded(monkeypatch):
-    """A dead link makes exactly len(RETRY_DELAYS)+1 attempts, then gives up —
-    no long in-call backoff (the across-poll layer handles persistence)."""
+def test_send_heat_makes_one_attempt(monkeypatch):
+    """The heat POST does NOT retry in-call — exactly one attempt, then it
+    returns failure. The watcher's poll loop retries instead, so a stuck send
+    can't stack into a multi-attempt stall on the detection thread."""
     calls = {"n": 0}
 
     def fake_urlopen(req, timeout=None):
@@ -93,4 +94,22 @@ def test_in_call_retry_count_is_bounded(monkeypatch):
     monkeypatch.setattr(client_mod.time, "sleep", lambda *_: None)  # don't actually back off
     res = IngestClient("https://makosmeets.com", "tok").send_heat(_heat())
     assert not res.ok
-    assert calls["n"] == len(RETRY_DELAYS) + 1 == 3
+    assert calls["n"] == 1
+
+
+def test_send_file_keeps_in_call_retries(tmp_path, monkeypatch):
+    """The off-thread raw upload still uses the full in-call backoff
+    (len(RETRY_DELAYS)+1 attempts) — only the live-board heat POST opts out."""
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise urlerror.URLError("dead")
+
+    monkeypatch.setattr(client_mod.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(client_mod.time, "sleep", lambda *_: None)
+    p = tmp_path / "004-000-001A-0001.do4"
+    p.write_text(";1;1;All\nLane5;8.13;;\nABCD1234\n", encoding="cp1252")
+    res = IngestClient("https://makosmeets.com", "tok").send_file(p, _heat())
+    assert not res.ok
+    assert calls["n"] == len(RETRY_DELAYS) + 1 == 5

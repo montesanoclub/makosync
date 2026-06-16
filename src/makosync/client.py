@@ -36,12 +36,14 @@ logger = logging.getLogger(__name__)
 USER_AGENT = f"MakoSync/{__version__}"
 DEFAULT_TIMEOUT = 8.0       # seconds — generous ceiling for the large raw-file
                             # upload and the relay/download GETs over flaky wifi
-HEAT_TIMEOUT = 5.0          # seconds — the live-board heat JSON is ~1KB; fail it
-                            # faster so a flaky link doesn't freeze the feed (it
-                            # POSTs on the detection thread). Leaves headroom for
-                            # a fresh-connection TLS handshake on congested wifi.
-RETRY_DELAYS = (0.5, 1)     # 2 in-call retries (~1.5s of sleeps) then give up;
-                            # the watcher's across-poll layer covers longer outages
+HEAT_TIMEOUT = 3.0          # seconds — the live-board heat JSON is ~1KB and POSTs
+                            # on the detection thread, so fail it FAST: a stuck
+                            # send must not freeze the feed. The watcher retries
+                            # across polls, so one short attempt is enough.
+RETRY_DELAYS = (1, 2, 4, 8) # in-call backoff for the off-thread raw upload + the
+                            # relay/download GETs. The heat POST opts OUT of this
+                            # (retry_delays=()) so two retry layers can't multiply
+                            # into a multi-minute stall — see send_heat.
 
 # The makosmeets live-results endpoints. trailingSlash: true on the server
 # 308-redirects a slashless POST and drops the body, so the slash is required.
@@ -143,6 +145,7 @@ class IngestClient:
             f"{self.base_url}{HEAT_PATH}", body,
             headers={"Content-Type": "application/json"},
             timeout=self.heat_timeout,
+            retry_delays=(),  # one fast attempt; the watcher's poll loop retries
         )
 
     def send_file(self, path: Path, heat: ParsedHeat) -> IngestResult:
@@ -230,7 +233,7 @@ class IngestClient:
     # ---- internals ----------------------------------------------------
 
     def _send_with_retry(self, url: str, body: bytes | None, *, headers: dict[str, str], method: str = "POST",
-                         timeout: float | None = None) -> IngestResult:
+                         timeout: float | None = None, retry_delays: tuple[float, ...] | None = None) -> IngestResult:
         merged_headers = {
             "User-Agent": USER_AGENT,
             **headers,
@@ -238,8 +241,9 @@ class IngestClient:
         if self.token:
             merged_headers["Authorization"] = f"Bearer {self.token}"
         to = self.timeout if timeout is None else timeout
+        delays = RETRY_DELAYS if retry_delays is None else retry_delays
         last: IngestResult = IngestResult(ok=False, status=0, detail="not attempted")
-        for attempt, delay in enumerate([0, *RETRY_DELAYS]):
+        for attempt, delay in enumerate([0, *delays]):
             if delay:
                 time.sleep(delay)
             try:

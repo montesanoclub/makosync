@@ -38,7 +38,10 @@ POLL_INTERVAL = 0.75         # seconds between folder scans — tight so a finis
                              # heat reaches the live board fast (a .do is tiny)
 SIZE_STABLE_GRACE = 0.5      # seconds — wait for size to stop changing before parsing
                              # (fallback gate; a checksummed .do is trusted at once)
-MAX_HANDLE_ATTEMPTS = 4      # give up on a file after this many transient failures
+MAX_HANDLE_ATTEMPTS = 3      # give up on a file after this many transient failures.
+                             # With the fail-fast heat send (one ~3s attempt, no
+                             # in-call backoff) this bounds a stuck heat to roughly
+                             # 3 x 3s ~= 10s before we move on and keep the feed live.
 
 
 @dataclass
