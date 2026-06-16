@@ -55,6 +55,7 @@ class AppConfig:
     upload_raw: bool = True  # also archive the raw .do to R2 (forensic copy)
     replay_existing: bool = False
     tier: str = "unofficial"
+    dolphin_poll: float = 0.75  # seconds between Dolphin folder scans (live-board latency)
 
     # --- Meet Manager mode ---
     mdb_path: str = ""        # path to the live Hy-Tek MM .mdb on the scoring PC

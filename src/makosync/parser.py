@@ -153,9 +153,26 @@ def _parse_lane_body(body: list[str]) -> list[LaneTime]:
     return lanes
 
 
+_CHECKSUM_RE = re.compile(r"^[0-9A-Fa-f]{8,}$")
+
+
+def ends_with_checksum(text: str) -> bool:
+    """True if the last non-empty line is a Dolphin hex checksum sentinel.
+
+    Dolphin appends this checksum LAST, after every lane row, so its presence
+    is a reliable "file fully written" marker — the watcher uses it to trust a
+    freshly-seen .do3/.do4 without waiting for a second confirming poll.
+    """
+    for ln in reversed(text.splitlines()):
+        s = ln.strip()
+        if s:
+            return bool(_CHECKSUM_RE.match(s))
+    return False
+
+
 def _drop_checksum(lines: list[str]) -> list[str]:
     """Last non-empty line is a hex checksum like 'B02586E5DAB26ABF' — drop it."""
-    if lines and re.match(r"^[0-9A-Fa-f]{8,}$", lines[-1].strip()):
+    if lines and _CHECKSUM_RE.match(lines[-1].strip()):
         return lines[:-1]
     return lines
 

@@ -28,15 +28,17 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .client import IngestClient, IngestResult
-from .parser import parse_file
+from .parser import ENCODING, ends_with_checksum, parse_file
 
 logger = logging.getLogger(__name__)
 
 EXTS_DEFAULT = (".do4", ".do3")
 EXTS_WITH_CSV = (".do4", ".do3", ".csv")
-POLL_INTERVAL = 2.0          # seconds between folder scans
+POLL_INTERVAL = 0.75         # seconds between folder scans — tight so a finished
+                             # heat reaches the live board fast (a .do is tiny)
 SIZE_STABLE_GRACE = 0.5      # seconds — wait for size to stop changing before parsing
-MAX_HANDLE_ATTEMPTS = 8      # give up on a file after this many transient failures
+                             # (fallback gate; a checksummed .do is trusted at once)
+MAX_HANDLE_ATTEMPTS = 4      # give up on a file after this many transient failures
 
 
 @dataclass
@@ -175,7 +177,11 @@ class Watcher:
         return files
 
     def _is_stable(self, p: Path) -> bool:
-        """Avoid reading a half-written file. Size must be unchanged across a tick."""
+        """Avoid reading a half-written file. A .do3/.do4 that already ends with
+        its Dolphin checksum line is complete, so we trust it on first sight —
+        saving a whole poll of latency per heat. Anything else (still being
+        written, or a .csv which has no end sentinel) must show an unchanged size
+        across a tick before we parse it."""
         try:
             size = p.stat().st_size
         except OSError:
@@ -184,12 +190,30 @@ class Watcher:
         now = time.monotonic()
         if prev is None:
             self._size_seen[p.name] = (size, now)
-            return False
+            return self._looks_complete(p)
         prev_size, first_seen = prev
         if prev_size != size:
             self._size_seen[p.name] = (size, now)
             return False
         return (now - first_seen) >= SIZE_STABLE_GRACE
+
+    def _looks_complete(self, p: Path) -> bool:
+        """True only if a .do3/.do4 already carries its trailing checksum line,
+        i.e. Dolphin has finished writing it. A mid-write file (or one whose
+        timed lane hasn't flushed yet) lacks the checksum and returns False, so
+        the size-stable gate still protects us. Other extensions (.csv) have no
+        such sentinel and always fall back to the size-stable gate."""
+        if p.suffix.lower() not in (".do4", ".do3"):
+            return False
+        try:
+            with p.open("rb") as f:
+                f.seek(0, 2)
+                end = f.tell()
+                f.seek(max(0, end - 64))
+                tail = f.read()
+        except OSError:
+            return False  # locked/half-written — retry on the next poll
+        return ends_with_checksum(tail.decode(ENCODING, "replace"))
 
     def _handle(self, p: Path) -> bool:
         """Return True when the file is fully handled (mark seen), False to retry

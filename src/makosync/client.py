@@ -34,8 +34,14 @@ from .parser import ParsedHeat
 logger = logging.getLogger(__name__)
 
 USER_AGENT = f"MakoSync/{__version__}"
-DEFAULT_TIMEOUT = 8.0       # seconds — the meet-PC network can be flaky
-RETRY_DELAYS = (1, 2, 4, 8) # 4 retries (~15s total) then give up
+DEFAULT_TIMEOUT = 8.0       # seconds — generous ceiling for the large raw-file
+                            # upload and the relay/download GETs over flaky wifi
+HEAT_TIMEOUT = 5.0          # seconds — the live-board heat JSON is ~1KB; fail it
+                            # faster so a flaky link doesn't freeze the feed (it
+                            # POSTs on the detection thread). Leaves headroom for
+                            # a fresh-connection TLS handshake on congested wifi.
+RETRY_DELAYS = (0.5, 1)     # 2 in-call retries (~1.5s of sleeps) then give up;
+                            # the watcher's across-poll layer covers longer outages
 
 # The makosmeets live-results endpoints. trailingSlash: true on the server
 # 308-redirects a slashless POST and drops the body, so the slash is required.
@@ -120,10 +126,14 @@ def _heat_to_payload(heat: ParsedHeat, tier: str = "unofficial", source: str = "
 
 
 class IngestClient:
-    def __init__(self, base_url: str, token: str = "", timeout: float = DEFAULT_TIMEOUT):
+    def __init__(self, base_url: str, token: str = "", timeout: float = DEFAULT_TIMEOUT,
+                 heat_timeout: float = HEAT_TIMEOUT):
         self.base_url = normalize_base_url(base_url)
         self.token = token or ""
         self.timeout = timeout
+        # The heat JSON POST runs inline on the watcher's detection thread, so it
+        # gets a shorter timeout than the (off-thread) raw upload and the relays.
+        self.heat_timeout = heat_timeout
 
     # ---- public API ---------------------------------------------------
 
@@ -132,6 +142,7 @@ class IngestClient:
         return self._send_with_retry(
             f"{self.base_url}{HEAT_PATH}", body,
             headers={"Content-Type": "application/json"},
+            timeout=self.heat_timeout,
         )
 
     def send_file(self, path: Path, heat: ParsedHeat) -> IngestResult:
@@ -218,20 +229,22 @@ class IngestClient:
 
     # ---- internals ----------------------------------------------------
 
-    def _send_with_retry(self, url: str, body: bytes | None, *, headers: dict[str, str], method: str = "POST") -> IngestResult:
+    def _send_with_retry(self, url: str, body: bytes | None, *, headers: dict[str, str], method: str = "POST",
+                         timeout: float | None = None) -> IngestResult:
         merged_headers = {
             "User-Agent": USER_AGENT,
             **headers,
         }
         if self.token:
             merged_headers["Authorization"] = f"Bearer {self.token}"
+        to = self.timeout if timeout is None else timeout
         last: IngestResult = IngestResult(ok=False, status=0, detail="not attempted")
         for attempt, delay in enumerate([0, *RETRY_DELAYS]):
             if delay:
                 time.sleep(delay)
             try:
                 req = request.Request(url, data=body, headers=merged_headers, method=method)
-                with request.urlopen(req, timeout=self.timeout) as resp:
+                with request.urlopen(req, timeout=to) as resp:
                     return IngestResult(ok=True, status=resp.status, detail="ok",
                                         body=resp.read().decode("utf-8", "replace"))
             except error.HTTPError as e:

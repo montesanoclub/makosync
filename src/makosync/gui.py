@@ -119,7 +119,7 @@ class GuiApp:
         # config with old values (and traces would pile up each mode switch).
         var_attrs = ("url_var", "token_var", "folder_var", "mdb_var", "import_dir_var",
                      "csv_var", "raw_var", "replay_var", "poll_var", "import_poll_var",
-                     "import_notify_var", "events_csv_var")
+                     "import_notify_var", "events_csv_var", "dolphin_poll_var")
         for attr in widget_attrs + var_attrs:
             if hasattr(self, attr):
                 delattr(self, attr)
@@ -220,6 +220,11 @@ class GuiApp:
             self.csv_var = tk.BooleanVar(value=self.cfg.include_csv)
             self.raw_var = tk.BooleanVar(value=self.cfg.upload_raw)
             self.replay_var = tk.BooleanVar(value=self.cfg.replay_existing)
+            ttk.Label(opt_frm, text="Scan every").pack(side=tk.LEFT, padx=(2, 4))
+            self.dolphin_poll_var = tk.StringVar(value=f"{self.cfg.dolphin_poll:g}")
+            ttk.Spinbox(opt_frm, from_=0.25, to=10, increment=0.25, width=5,
+                        textvariable=self.dolphin_poll_var).pack(side=tk.LEFT)
+            ttk.Label(opt_frm, text="s").pack(side=tk.LEFT, padx=(2, 12))
             ttk.Checkbutton(opt_frm, text="Also watch .csv", variable=self.csv_var).pack(side=tk.LEFT, padx=2)
             ttk.Checkbutton(opt_frm, text="Upload raw files", variable=self.raw_var).pack(side=tk.LEFT, padx=8)
             ttk.Checkbutton(opt_frm, text="Replay existing on start", variable=self.replay_var).pack(side=tk.LEFT, padx=2)
@@ -284,7 +289,8 @@ class GuiApp:
         # URL/token/paths — config is re-read into the fields on next launch.
         for _name in ("url_var", "token_var", "folder_var", "mdb_var", "poll_var",
                       "events_csv_var", "csv_var", "raw_var", "replay_var",
-                      "import_dir_var", "import_poll_var", "import_notify_var"):
+                      "import_dir_var", "import_poll_var", "import_notify_var",
+                      "dolphin_poll_var"):
             _v = getattr(self, _name, None)
             if _v is not None:
                 _v.trace_add("write", self._schedule_persist)
@@ -365,6 +371,11 @@ class GuiApp:
         self.cfg.include_csv = bool(self.csv_var.get())
         self.cfg.upload_raw = bool(self.raw_var.get())
         self.cfg.replay_existing = bool(self.replay_var.get())
+        try:
+            poll = max(0.25, float(self.dolphin_poll_var.get()))
+        except (ValueError, tk.TclError):
+            poll = 0.75
+        self.cfg.dolphin_poll = poll
         wcfg = WatcherConfig(
             folder=Path(folder),
             base_url=url,
@@ -372,6 +383,7 @@ class GuiApp:
             include_csv=self.cfg.include_csv,
             upload_raw=self.cfg.upload_raw,
             replay_existing=self.cfg.replay_existing,
+            poll_interval=poll,
             tier="unofficial",
         )
         return Watcher(wcfg, on_event=self.log_q.put)
@@ -778,6 +790,11 @@ class GuiApp:
                 self.cfg.upload_raw = bool(self.raw_var.get())
             if hasattr(self, "replay_var"):
                 self.cfg.replay_existing = bool(self.replay_var.get())
+            if hasattr(self, "dolphin_poll_var"):
+                try:
+                    self.cfg.dolphin_poll = max(0.25, float(self.dolphin_poll_var.get()))
+                except (ValueError, tk.TclError):
+                    pass
             if hasattr(self, "events_csv_var"):
                 self.cfg.dolphin_events_csv = self.events_csv_var.get().strip()
             if hasattr(self, "poll_var"):

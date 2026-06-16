@@ -1,10 +1,14 @@
 # Dolphin mode — send latency & flaky-network behavior
 
-**Status: known issue, documented, not yet fixed.** Found 2026-06-03 during the
-first live meet run. Investigation was code-only (the Dolphin PC sits on an
-isolated `10.1.1.x` meet subnet, unreachable from the venue wifi the Mac was on,
-so there are no corroborating live logs yet). All line numbers below are against
-`src/makosync/watcher.py` and `src/makosync/client.py` as of that date.
+**Status: mostly fixed 2026-06-16 (not yet released).** The analysis below was
+verified against the current code (it still held exactly) and the low-risk fixes
+landed — see **What shipped** at the bottom. The one remaining item is the
+structural send-queue (ranked fix #3), deliberately deferred to its own release.
+Found 2026-06-03 during the first live meet run. Investigation was code-only (the
+Dolphin PC sits on an isolated `10.1.1.x` meet subnet, unreachable from the venue
+wifi the Mac was on, so there are no corroborating live logs yet). The line
+numbers below are against `watcher.py`/`client.py` as of 2026-06-03; the fixes
+shifted them slightly.
 
 ## Symptom
 
@@ -109,6 +113,44 @@ heat. That is the trickle-then-clump symptom.
 Items 1–2 are constant changes and safe to ship between meets; 3 is the larger
 structural change. Any fix ships as a new **release** that operators reinstall —
 never mid-meet.
+
+## What shipped (2026-06-16, unreleased)
+
+Fixes 1, 2, and 4 landed; fix 3 (send queue) is deferred. The adversarial review
+found the naive form of each "fix" silently drops results, so the shipped
+versions are the *safe* variants:
+
+1. **Baseline cut.** `POLL_INTERVAL 2.0 → 0.75` (`watcher.py`). Instead of the
+   unsafe "trust on first sight," `_is_stable` now trusts a `.do3/.do4` on first
+   sight **only if it already ends with its Dolphin checksum line** (the
+   end-of-write sentinel — `parser.ends_with_checksum` / `Watcher._looks_complete`).
+   A mid-write file lacks the checksum and still falls back to the two-poll
+   size-stable gate, so the silent-zero-lane-drop hazard is avoided. `.csv` (no
+   sentinel) always uses the size-stable gate. Per-heat floor drops from ~2–4 s
+   to <~1 s. **Exposed in the Dolphin GUI** ("Scan every … s", `cfg.dolphin_poll`,
+   floor 0.25 s) — previously hardcoded.
+2. **Fail fast (split timeout).** New `HEAT_TIMEOUT = 5.0` for the heat POST only;
+   the raw upload + relay/download GETs keep `DEFAULT_TIMEOUT = 8.0`. (Not a flat
+   global cut — the timeout is shared across all endpoints, so a global 3 s would
+   have made the large raw upload and the `download_file` pull fragile. 5 s leaves
+   headroom for a fresh-connection TLS handshake on congested wifi.)
+4. **Retry re-budget (not "collapse").** `RETRY_DELAYS (1,2,4,8) → (0.5,1)` and
+   `MAX_HANDLE_ATTEMPTS 8 → 4`. Both layers are kept — the across-poll layer is
+   the *only* retry for parse/lock failures (`parse_file → None`), so deleting it
+   would silently drop a still-writing file. Worst-case for one dead-link heat:
+   was ~7.5 min / ~40 HTTP attempts → now ~80–90 s / ~12 attempts.
+
+Tests: `tests/test_watcher_stability.py` (checksum fast-path + truncation
+safety), `tests/test_client_timeout.py` (split timeout + bounded retries),
+`tests/test_parser.py::test_ends_with_checksum` + `…_real_samples…`.
+
+**Still open — fix 3 (send queue).** The heat POST is still synchronous on the
+detection thread, so a stuck send still head-of-line-blocks following heats (now
+for ~80–90 s, not ~7.5 min). The structural cure (offload heat JSON to a worker
+like `_raw_loop`) is its own release: it inverts where `_seen`/retry state lives
+(out-of-order requeue, restart double-send/lost-send, `--once` path, rewritten
+retry tests) and needs a corroborating live-log capture from the meet subnet
+plus makosmeets-owner sign-off that a late older heat can't overwrite a newer one.
 
 ## Code map
 

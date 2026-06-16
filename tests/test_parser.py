@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from makosync.parser import (
-    _final_from_timers, _to_secs, format_seconds,
+    _final_from_timers, _to_secs, ends_with_checksum, format_seconds,
     parse_csv_text, parse_do3_text, parse_do4_text, parse_file,
 )
 
@@ -122,3 +122,20 @@ def test_unknown_extension_returns_none(tmp_path):
     p = tmp_path / "x.txt"
     p.write_text(";1;1;All\nLane1;1.0;;\nDEAD\n", encoding="cp1252")
     assert parse_file(p) is None
+
+
+# ---------- end-of-write sentinel (watcher fast-path) ----------
+
+def test_ends_with_checksum():
+    # A finished .do ends with the trailing hex checksum line.
+    assert ends_with_checksum(";1;1;All\nLane5;8.13;;\n1F72DF569DD6BBD7\n") is True
+    assert ends_with_checksum(";1;1;All\nLane5;8.13;;\nDEADBEEF\n  \n") is True  # trailing blank ok
+    # A file still being written hasn't reached the checksum line yet.
+    assert ends_with_checksum(";1;1;All\nLane1;0;0;0\nLane2;0;0;0\n") is False
+    assert ends_with_checksum("") is False
+    assert ends_with_checksum("ABC\n") is False  # too short / not 8+ hex
+
+
+def test_real_samples_end_with_checksum():
+    for name in ("004-000-001A-0001.do4", "004-000-00F0001.do3"):
+        assert ends_with_checksum((SAMPLES / name).read_text(encoding="cp1252")), name
