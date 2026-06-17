@@ -137,14 +137,15 @@ versions are the *safe* variants:
    (5 in-call attempts) × (8 poll retries) = the 8 s socket timeout multiplied 40×.
    The heat POST now opts OUT of the in-call backoff (`send_heat` passes
    `retry_delays=()`), so one heat send = ONE ~3 s attempt; the watcher's
-   across-poll layer is the only retry, capped at `MAX_HANDLE_ATTEMPTS = 3`.
+   across-poll layer is the only retry, capped at `MAX_HANDLE_ATTEMPTS = 10`.
    (`RETRY_DELAYS` stays `(1,2,4,8)` for the off-thread raw upload + relays, which
    are fine to retry longer.) That across-poll layer is kept because it is also the
    *only* retry for parse/lock failures (`parse_file → None`), so deleting it would
-   silently drop a still-writing file. Worst-case for one stuck heat: was
-   ~7.5 min / ~40 attempts → now ~3 × 3 s ≈ **10 s** / 3 attempts, then we give up
-   and keep the feed moving (the venue link is reliable, so a 10 s-failing send is
-   a real outage, not a blip).
+   silently drop a still-writing file. The key change is that the retries are now
+   **linear, not multiplied**: was ~7.5 min / ~40 attempts (5 in-call × 8 polls) →
+   now ~10 × 3 s ≈ **30 s** / 10 attempts before give-up. 10 tries comfortably
+   rides out a real outage because heats are ~30–90 s apart, yet still can't grow
+   into the old multi-minute, feed-freezing stall.
 
 Tests: `tests/test_watcher_stability.py` (checksum fast-path + truncation
 safety), `tests/test_client_timeout.py` (split timeout + bounded retries),
